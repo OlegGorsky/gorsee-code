@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-agent"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "gorsee-code-artifacts",
@@ -477,7 +477,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-artifacts"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "tempfile",
@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-cli"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-config"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-core",
  "serde",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-context"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "ignore",
  "serde",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-core"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "serde",
@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-gateway"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "axum",
  "chrono",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-gateway-client"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-core",
  "gorsee-code-gateway",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-hooks"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-limits",
  "gorsee-code-safety",
@@ -585,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-limits"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-neurogate"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "futures-util",
  "gorsee-code-core",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-safety"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "regex",
  "serde",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-session"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "gorsee-code-core",
@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-skills"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-safety",
  "serde",
@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-tool-runtime"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-safety",
  "serde",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-tools"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-context",
  "gorsee-code-safety",
@@ -660,7 +660,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-tui"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-ui-state"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "gorsee-code-core",
  "gorsee-code-usage",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-usage"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
 ]
