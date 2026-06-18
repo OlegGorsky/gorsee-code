@@ -3,6 +3,7 @@
 
 const fs = require("fs");
 const https = require("https");
+const os = require("os");
 const path = require("path");
 
 const version = require("../package.json").version;
@@ -28,6 +29,7 @@ async function install() {
   await download(url, output);
   if (process.platform !== "win32") {
     fs.chmodSync(output, 0o755);
+    ensureCommandInPath();
   }
   stop("OK");
 }
@@ -80,6 +82,53 @@ function download(url, output, redirects = 0) {
 
 function isRedirect(statusCode) {
   return [301, 302, 303, 307, 308].includes(statusCode);
+}
+
+function ensureCommandInPath() {
+  if (process.env.npm_config_global !== "true") {
+    return;
+  }
+
+  const pathDirs = (process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((dir) => path.resolve(dir));
+  const npmBin = path.resolve(process.env.npm_config_prefix || "", "bin");
+  if (pathDirs.includes(npmBin)) {
+    return;
+  }
+
+  const linkDir = pathDirs.find(isUserWritableDir);
+  if (!linkDir) {
+    return;
+  }
+
+  const link = path.join(linkDir, "gcode");
+  if (fs.existsSync(link)) {
+    return;
+  }
+
+  // ponytail: npm can use a global bin dir outside PATH; this makes the one-command install work.
+  try {
+    fs.symlinkSync(path.join(__dirname, "gcode.js"), link);
+  } catch {}
+}
+
+function isUserWritableDir(dir) {
+  const home = path.resolve(os.homedir());
+  if (!dir.startsWith(home + path.sep)) {
+    return false;
+  }
+
+  try {
+    if (!fs.statSync(dir).isDirectory()) {
+      return false;
+    }
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function spinner(label) {
