@@ -19,7 +19,7 @@ jobs:
           - os: ubuntu-24.04-arm
             asset: gcode-linux-arm64
             bin: target/release/gcode
-          - os: macos-13
+          - os: macos-15-intel
             asset: gcode-darwin-x64
             bin: target/release/gcode
           - os: macos-14
