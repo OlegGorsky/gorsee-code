@@ -1,0 +1,21 @@
+[package]
+name = "gorsee-code-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+gorsee-code-artifacts = { path = "../gorsee-code-artifacts" }
+gorsee-code-core = { path = "../gorsee-code-core" }
+gorsee-code-safety = { path = "../gorsee-code-safety" }
+gorsee-code-session = { path = "../gorsee-code-session" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

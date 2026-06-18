@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/skill.schema.json",
+  "title": "Gorsee Code Skill",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "description",
+    "allowed_tools",
+    "default_agents",
+    "risk",
+    "instructions"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "allowed_tools": { "type": "array", "items": { "type": "string" } },
+    "default_agents": { "type": "array", "items": { "type": "string" } },
+    "risk": { "type": "string", "enum": ["read", "write", "command", "network", "delete"] },
+    "instructions": { "type": "string" }
+  },
+  "additionalProperties": false
+}

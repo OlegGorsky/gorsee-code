@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/tool-manifest.schema.json",
+  "title": "Gorsee Code Tool Manifest",
+  "type": "object",
+  "required": ["name", "description", "risk", "capabilities"],
+  "properties": {
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "risk": { "type": "string", "enum": ["read", "write", "command", "network", "delete"] },
+    "capabilities": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

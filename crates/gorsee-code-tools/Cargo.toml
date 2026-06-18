@@ -1,0 +1,18 @@
+[package]
+name = "gorsee-code-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gorsee-code-context = { path = "../gorsee-code-context" }
+gorsee-code-safety = { path = "../gorsee-code-safety" }
+gorsee-code-tool-runtime = { path = "../gorsee-code-tool-runtime" }
+ignore.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

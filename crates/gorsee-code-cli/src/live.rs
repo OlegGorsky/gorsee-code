@@ -1,0 +1,24 @@
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use gorsee_code_config::GorseeConfig;
+use gorsee_code_neurogate::NeuroGateClient;
+
+use crate::{auth, paths};
+
+pub fn client(root: &Path, env_key: Option<&str>) -> Result<Option<NeuroGateClient>> {
+    let Some(api_key) = auth::api_key(root, env_key)? else {
+        return Ok(None);
+    };
+    let config = GorseeConfig::load(paths::config_path(root)).context("load gorsee-code.toml")?;
+    Ok(Some(NeuroGateClient::new(
+        config.neurogate.endpoint,
+        api_key,
+    )?))
+}
+
+pub fn block_on<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    tokio::runtime::Runtime::new()
+        .context("start tokio runtime")?
+        .block_on(future)
+}

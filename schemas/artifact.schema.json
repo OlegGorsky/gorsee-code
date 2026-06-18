@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/artifact.schema.json",
+  "title": "Gorsee Code Artifact",
+  "type": "object",
+  "required": ["id", "path", "mime"],
+  "properties": {
+    "id": { "type": "string" },
+    "path": { "type": "string" },
+    "mime": { "type": "string" }
+  },
+  "additionalProperties": false
+}

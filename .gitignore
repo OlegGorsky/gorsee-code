@@ -1,0 +1,10 @@
+/target/
+/.direnv/
+/.env
+/.env.*
+!.env.example
+/npm/bin/
+/.gorsee-code/auth.json
+/.gorsee-code/sessions/
+*.log
+*.tmp

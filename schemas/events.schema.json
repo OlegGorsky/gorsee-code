@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/events.schema.json",
+  "title": "Gorsee Code Event",
+  "type": "object",
+  "required": ["id", "sequence", "session_id", "timestamp", "kind", "payload"],
+  "properties": {
+    "id": { "type": "string" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "session_id": { "type": "string" },
+    "agent_id": { "type": ["string", "null"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "kind": { "type": "string" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@gorsee/code",
+  "version": "0.1.0",
+  "description": "NeuroGate-native coding agent command center",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OlegGorsky/gorsee-code.git"
+  },
+  "bin": {
+    "gcode": "npm/gcode.js"
+  },
+  "files": [
+    "npm/gcode.js",
+    "npm/postinstall.js",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "postinstall": "node npm/postinstall.js",
+    "test:npm": "node npm/postinstall.js --check"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

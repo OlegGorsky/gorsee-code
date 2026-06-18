@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/command.schema.json",
+  "title": "Gorsee Code Command",
+  "type": "object",
+  "required": ["id", "session_id", "kind", "payload"],
+  "properties": {
+    "id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "user_message",
+        "approve",
+        "deny",
+        "pause",
+        "resume",
+        "select_model",
+        "change_budget"
+      ]
+    },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

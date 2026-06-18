@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/session-manifest.schema.json",
+  "title": "Gorsee Code Session Manifest",
+  "type": "object",
+  "required": ["id", "repo", "branch", "started_at", "status", "agents", "budget"],
+  "properties": {
+    "id": { "type": "string" },
+    "repo": { "type": "string" },
+    "branch": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "status": { "type": "string" },
+    "agents": { "type": "array", "items": { "type": "string" } },
+    "budget": {
+      "type": "object",
+      "required": ["tokens_limit", "tokens_used"],
+      "properties": {
+        "tokens_limit": { "type": "integer", "minimum": 0 },
+        "tokens_used": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "additionalProperties": false
+}

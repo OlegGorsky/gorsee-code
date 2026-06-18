@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gorsee.dev/schemas/hook.schema.json",
+  "title": "Gorsee Code Hook",
+  "type": "object",
+  "required": ["id", "point", "description"],
+  "properties": {
+    "id": { "type": "string" },
+    "point": {
+      "type": "string",
+      "enum": [
+        "before_mission",
+        "after_mission",
+        "before_model_call",
+        "after_model_call",
+        "before_tool",
+        "after_tool",
+        "before_patch",
+        "after_patch",
+        "before_test",
+        "after_test",
+        "on_budget_warning",
+        "on_limit_warning",
+        "on_error",
+        "before_session_export"
+      ]
+    },
+    "description": { "type": "string" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,39 @@
+[package]
+name = "gorsee-code-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "gorsee_code_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gcode"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+gorsee-code-agent = { path = "../gorsee-code-agent" }
+gorsee-code-config = { path = "../gorsee-code-config" }
+gorsee-code-core = { path = "../gorsee-code-core" }
+gorsee-code-gateway = { path = "../gorsee-code-gateway" }
+gorsee-code-hooks = { path = "../gorsee-code-hooks" }
+gorsee-code-limits = { path = "../gorsee-code-limits" }
+gorsee-code-neurogate = { path = "../gorsee-code-neurogate" }
+gorsee-code-safety = { path = "../gorsee-code-safety" }
+gorsee-code-session = { path = "../gorsee-code-session" }
+gorsee-code-skills = { path = "../gorsee-code-skills" }
+gorsee-code-tools = { path = "../gorsee-code-tools" }
+gorsee-code-tui = { path = "../gorsee-code-tui" }
+gorsee-code-ui-state = { path = "../gorsee-code-ui-state" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

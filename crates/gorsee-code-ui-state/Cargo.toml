@@ -1,0 +1,14 @@
+[package]
+name = "gorsee-code-ui-state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gorsee-code-core = { path = "../gorsee-code-core" }
+gorsee-code-usage = { path = "../gorsee-code-usage" }
+serde.workspace = true
+serde_json.workspace = true
