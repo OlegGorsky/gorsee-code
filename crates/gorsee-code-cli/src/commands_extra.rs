@@ -1,12 +1,18 @@
-use std::{fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use anyhow::{anyhow, Context, Result};
 use gorsee_code_agent::{TaskRunSummary, TaskRunner};
 use gorsee_code_config::{default_config, GorseeConfig};
-use gorsee_code_core::{default_agent_matrix, TaskSpec};
+use gorsee_code_core::{
+    default_agent_matrix, preferred_model_ids, AgentProfile, AgentRole, ModelCapability, TaskSpec,
+};
 use gorsee_code_gateway::GatewayState;
 use gorsee_code_hooks::builtin_hooks;
-use gorsee_code_neurogate::NeuroGateClient;
+use gorsee_code_neurogate::{ChatMessage, ChatRequest, NeuroGateClient, NeuroGateError};
 use gorsee_code_session::SessionManifest;
 use gorsee_code_skills::find_skill;
 use gorsee_code_tools::builtin_registry;
@@ -107,9 +113,11 @@ pub fn run_task(
     env_key: Option<&str>,
 ) -> Result<TaskRunSummary> {
     let client = require_live_client(root, env_key)?;
+    let agents = live_agent_matrix(&client)?;
     paths::ensure_layout(root)?;
     let spec = TaskSpec::new(objective, root.display().to_string());
-    Ok(TaskRunner::new(paths::local_dir(root)).run_sequential(&spec, &client)?)
+    Ok(TaskRunner::new(paths::local_dir(root))
+        .run_sequential_with_agents(&spec, &client, agents)?)
 }
 
 pub fn run_skill(
@@ -119,6 +127,7 @@ pub fn run_skill(
     env_key: Option<&str>,
 ) -> Result<String> {
     let client = require_live_client(root, env_key)?;
+    let agents = live_agent_matrix(&client)?;
     let skill = find_skill(id).ok_or_else(|| anyhow!("unknown skill: {id}"))?;
     paths::ensure_layout(root)?;
     let objective = if objective.is_empty() {
@@ -127,7 +136,8 @@ pub fn run_skill(
         objective.join(" ")
     };
     let spec = TaskSpec::new(objective, root.display().to_string());
-    let summary = TaskRunner::new(paths::local_dir(root)).run_skill(&spec, &skill.id, &client)?;
+    let summary = TaskRunner::new(paths::local_dir(root))
+        .run_skill_with_agents(&spec, &skill.id, &client, agents)?;
     Ok(format!(
         "skill: {} session={}\nevents={}\nagents={}\nartifacts={}\n",
         skill.id,
@@ -140,6 +150,94 @@ pub fn run_skill(
 
 pub(crate) fn require_live_client(root: &Path, env_key: Option<&str>) -> Result<NeuroGateClient> {
     live::client(root, env_key)?.ok_or_else(missing_auth)
+}
+
+fn live_agent_matrix(client: &NeuroGateClient) -> Result<Vec<AgentProfile>> {
+    let models = live::block_on(async { Ok(client.list_models().await?) })?;
+    let mut health = BTreeMap::new();
+    let mut agents = default_agent_matrix();
+    for agent in &mut agents {
+        agent.model = select_live_model(client, &agent.role, &models, &mut health)?;
+    }
+    Ok(agents)
+}
+
+fn select_live_model(
+    client: &NeuroGateClient,
+    role: &AgentRole,
+    models: &[ModelCapability],
+    health: &mut BTreeMap<String, bool>,
+) -> Result<String> {
+    let mut rejected = Vec::new();
+    for model in candidate_model_ids(role, models) {
+        if model_accepts_chat(client, &model, health)? {
+            return Ok(model);
+        }
+        rejected.push(model);
+    }
+    Err(anyhow!(
+        "no usable live NeuroGate model for {}; rejected={}",
+        role.id(),
+        rejected.join(",")
+    ))
+}
+
+fn candidate_model_ids(role: &AgentRole, models: &[ModelCapability]) -> Vec<String> {
+    let available = models
+        .iter()
+        .map(|model| model.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut candidates = Vec::new();
+    for model in preferred_model_ids(role) {
+        if available.contains(model) {
+            candidates.push((*model).to_string());
+        }
+    }
+    for model in models {
+        if !candidates.iter().any(|candidate| candidate == &model.id) {
+            candidates.push(model.id.clone());
+        }
+    }
+    candidates
+}
+
+fn model_accepts_chat(
+    client: &NeuroGateClient,
+    model: &str,
+    health: &mut BTreeMap<String, bool>,
+) -> Result<bool> {
+    if let Some(usable) = health.get(model) {
+        return Ok(*usable);
+    }
+    let request = ChatRequest {
+        model: model.to_string(),
+        stream: false,
+        messages: vec![
+            ChatMessage {
+                role: "system".into(),
+                content: "Reply with OK only.".into(),
+            },
+            ChatMessage::user("OK"),
+        ],
+    };
+    let usable = match live::block_on(async {
+        Ok::<_, anyhow::Error>(client.chat_completion(&request).await)
+    })? {
+        Ok(_) => true,
+        Err(error) if is_model_rejection(&error) => false,
+        Err(error) => {
+            return Err(anyhow!(error)).with_context(|| format!("probe live model {model}"));
+        }
+    };
+    health.insert(model.to_string(), usable);
+    Ok(usable)
+}
+
+fn is_model_rejection(error: &NeuroGateError) -> bool {
+    matches!(
+        error,
+        NeuroGateError::Status { status: 400, body, .. } if body.contains("upstream_rejected")
+    )
 }
 
 fn missing_auth() -> anyhow::Error {
@@ -203,4 +301,52 @@ pub fn read_manifest(root: &Path, id: &str) -> Result<SessionManifest> {
     let path = paths::sessions_dir(root).join(id).join("manifest.json");
     let text = fs::read_to_string(path).context("read session manifest")?;
     serde_json::from_str(&text).context("parse session manifest")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidate_models_prefer_role_order_before_other_live_models() {
+        let models = vec![
+            model("qwen3.7-max"),
+            model("deepseek-v4-pro"),
+            model("custom-model"),
+            model("glm-5.1"),
+        ];
+
+        assert_eq!(
+            candidate_model_ids(&AgentRole::Architect, &models),
+            ["glm-5.1", "deepseek-v4-pro", "qwen3.7-max", "custom-model"]
+        );
+    }
+
+    #[test]
+    fn upstream_rejected_status_is_model_rejection() {
+        let rejected = NeuroGateError::Status {
+            status: 400,
+            url: "https://api.neurogate.space/v1/chat/completions".into(),
+            body: r#"{"error":{"code":"upstream_rejected"}}"#.into(),
+        };
+        let auth = NeuroGateError::Status {
+            status: 401,
+            url: "https://api.neurogate.space/v1/chat/completions".into(),
+            body: r#"{"error":{"code":"unauthorized"}}"#.into(),
+        };
+
+        assert!(is_model_rejection(&rejected));
+        assert!(!is_model_rejection(&auth));
+    }
+
+    fn model(id: &str) -> ModelCapability {
+        ModelCapability {
+            id: id.into(),
+            owned_by: Some("neurogate".into()),
+            credit_multiplier: 1.0,
+            supports_streaming: true,
+            supports_tools: false,
+            context_window: None,
+        }
+    }
 }

@@ -36,8 +36,8 @@ fn sequential_runner_uses_model_and_records_tool_results() {
     let summary = runner.run_sequential(&spec, &client).unwrap();
 
     assert_eq!(client.requests.borrow().len(), 6);
-    assert_eq!(client.requests.borrow()[0].model, "neurogate/gpt-5");
-    assert_eq!(client.requests.borrow()[1].model, "neurogate/gpt-5");
+    assert_eq!(client.requests.borrow()[0].model, "glm-5.1");
+    assert_eq!(client.requests.borrow()[1].model, "glm-5.1");
     let store = SessionStore::new(
         temp.path().join(".gorsee-code"),
         gorsee_code_safety::Redactor::default(),

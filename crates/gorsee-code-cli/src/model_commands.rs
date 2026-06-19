@@ -123,11 +123,12 @@ fn contains_any(value: &str, needles: &[&str]) -> bool {
 
 fn configured_multiplier(model: &str) -> f64 {
     match model {
-        "neurogate/gpt-5" => 3.0,
-        "neurogate/qwen-coder-fast" => 0.7,
-        "neurogate/deepseek-coder" => 1.2,
-        "neurogate/gpt-5-mini" => 1.0,
-        "neurogate/cheap" => 0.25,
+        "glm-5.1" => 1.85,
+        "kimi-k2.6" => 1.4,
+        "mimo-v2.5" => 0.1,
+        "deepseek-v4-flash" => 0.1,
+        "deepseek-v4-pro" => 0.4,
+        "vibe-lite-1" => 0.1,
         _ => 1.0,
     }
 }

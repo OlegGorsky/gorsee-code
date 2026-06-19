@@ -75,7 +75,7 @@ fn models_show_credit_multipliers_for_configured_matrix() {
 
     assert!(output.contains("models: configured"));
     assert!(output.contains("credit_multiplier="));
-    assert!(output.contains("neurogate/gpt-5"));
+    assert!(output.contains("glm-5.1"));
     assert_product_output(&output);
 }
 

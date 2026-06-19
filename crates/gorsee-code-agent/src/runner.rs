@@ -35,7 +35,16 @@ impl TaskRunner {
         spec: &TaskSpec,
         client: &C,
     ) -> Result<TaskRunSummary, AgentRunError> {
-        self.run(spec, None, client)
+        self.run(spec, None, client, default_agent_matrix())
+    }
+
+    pub fn run_sequential_with_agents<C: ChatClient>(
+        &self,
+        spec: &TaskSpec,
+        client: &C,
+        agents: Vec<AgentProfile>,
+    ) -> Result<TaskRunSummary, AgentRunError> {
+        self.run(spec, None, client, agents)
     }
 
     pub fn run_skill<C: ChatClient>(
@@ -44,7 +53,17 @@ impl TaskRunner {
         skill_id: &str,
         client: &C,
     ) -> Result<TaskRunSummary, AgentRunError> {
-        self.run(spec, Some(skill_id), client)
+        self.run(spec, Some(skill_id), client, default_agent_matrix())
+    }
+
+    pub fn run_skill_with_agents<C: ChatClient>(
+        &self,
+        spec: &TaskSpec,
+        skill_id: &str,
+        client: &C,
+        agents: Vec<AgentProfile>,
+    ) -> Result<TaskRunSummary, AgentRunError> {
+        self.run(spec, Some(skill_id), client, agents)
     }
 
     pub fn resume_after_decision<C: ChatClient>(
@@ -62,8 +81,8 @@ impl TaskRunner {
         spec: &TaskSpec,
         skill_id: Option<&str>,
         client: &C,
+        agents: Vec<AgentProfile>,
     ) -> Result<TaskRunSummary, AgentRunError> {
-        let agents = default_agent_matrix();
         let registry = builtin_registry(&spec.repo_path)?;
         let session_id = session_id(&spec.title);
         let mut manifest = manifest_for(&session_id, spec, &agents);

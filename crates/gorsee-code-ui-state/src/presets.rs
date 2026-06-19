@@ -129,7 +129,7 @@ fn ledger(tokens: u64) -> TokenLedger {
     ledger.push(UsageRecord {
         agent_id: "coder".into(),
         phase: "workspace".into(),
-        model: "neurogate/gpt-5".into(),
+        model: "glm-5.1".into(),
         input_tokens: tokens,
         output_tokens: 0,
         cached_tokens: 0,

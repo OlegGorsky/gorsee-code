@@ -17,9 +17,9 @@ fn route_explains_production_agent_plan_without_live_auth() {
     .unwrap();
 
     assert!(output.contains("route:"));
-    assert!(output.contains("architect neurogate/gpt-5"));
-    assert!(output.contains("coder neurogate/deepseek-coder"));
-    assert!(output.contains("validator neurogate/gpt-5-mini"));
+    assert!(output.contains("architect glm-5.1"));
+    assert!(output.contains("coder deepseek-v4-pro"));
+    assert!(output.contains("validator kimi-k2.6"));
     assert_product_output(&output);
 }
 
@@ -90,10 +90,10 @@ fn models_benchmark_summarizes_configured_profiles_without_live_auth() {
     .unwrap();
 
     assert!(output.contains("models benchmark: configured"));
-    assert!(output.contains("architect neurogate/gpt-5"));
-    assert!(output.contains("credit_multiplier=3.00"));
+    assert!(output.contains("architect glm-5.1"));
+    assert!(output.contains("credit_multiplier=1.85"));
     assert!(output.contains("cost=expensive"));
-    assert!(output.contains("validator neurogate/gpt-5-mini"));
+    assert!(output.contains("validator kimi-k2.6"));
     assert_product_output(&output);
 }
 
@@ -110,7 +110,7 @@ fn models_recommend_selects_coding_profile_from_task() {
     assert!(output.contains("models recommend:"));
     assert!(output.contains("task=frontend bugfix"));
     assert!(output.contains("agent=coder"));
-    assert!(output.contains("model=neurogate/deepseek-coder"));
+    assert!(output.contains("model=deepseek-v4-pro"));
     assert!(output.contains("reasoning=medium"));
     assert_product_output(&output);
 }

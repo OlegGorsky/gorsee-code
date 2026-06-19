@@ -42,8 +42,9 @@ impl NeuroGateClient {
             .http
             .get(format!("{}/models", self.base_url))
             .send()
+            .await?;
+        let response = check_response(response)
             .await?
-            .error_for_status()?
             .json::<ModelListResponse>()
             .await?;
         Ok(parse_models_response(response))
@@ -54,10 +55,8 @@ impl NeuroGateClient {
             .http
             .get(format!("{}/me", self.base_url))
             .send()
-            .await?
-            .error_for_status()?
-            .json::<Value>()
             .await?;
+        let response = check_response(response).await?.json::<Value>().await?;
         Ok(parse_usage_windows(&response))
     }
 
@@ -70,8 +69,9 @@ impl NeuroGateClient {
             .post(format!("{}/chat/completions", self.base_url))
             .json(request)
             .send()
+            .await?;
+        let response = check_response(response)
             .await?
-            .error_for_status()?
             .json::<ChatResponse>()
             .await?;
         Ok(response)
@@ -83,14 +83,13 @@ impl NeuroGateClient {
     ) -> Result<Vec<ChatStreamChunk>, NeuroGateError> {
         let mut request = request.clone();
         request.stream = true;
-        let mut stream = self
+        let stream = self
             .http
             .post(format!("{}/chat/completions", self.base_url))
             .json(&request)
             .send()
-            .await?
-            .error_for_status()?
-            .bytes_stream();
+            .await?;
+        let mut stream = check_response(stream).await?.bytes_stream();
         let mut buffer = String::new();
         let mut chunks = Vec::new();
         while let Some(bytes) = stream.next().await {
@@ -100,6 +99,20 @@ impl NeuroGateClient {
         drain_stream_lines(&mut buffer, &mut chunks, true)?;
         Ok(chunks)
     }
+}
+
+async fn check_response(response: reqwest::Response) -> Result<reqwest::Response, NeuroGateError> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let url = response.url().to_string();
+    let body = response.text().await?;
+    Err(NeuroGateError::Status {
+        status: status.as_u16(),
+        url,
+        body,
+    })
 }
 
 fn drain_stream_lines(

@@ -276,17 +276,25 @@ impl GatewayState {
 fn configured_capabilities() -> Vec<ModelCapability> {
     vec![
         ModelCapability {
-            id: "neurogate/gpt-5".into(),
+            id: "glm-5.1".into(),
             owned_by: Some("neurogate".into()),
-            credit_multiplier: 3.0,
+            credit_multiplier: 1.85,
             supports_streaming: true,
             supports_tools: false,
             context_window: None,
         },
         ModelCapability {
-            id: "neurogate/qwen-coder-fast".into(),
+            id: "deepseek-v4-pro".into(),
             owned_by: Some("neurogate".into()),
-            credit_multiplier: 0.7,
+            credit_multiplier: 0.4,
+            supports_streaming: true,
+            supports_tools: false,
+            context_window: None,
+        },
+        ModelCapability {
+            id: "vibe-lite-1".into(),
+            owned_by: Some("neurogate".into()),
+            credit_multiplier: 0.1,
             supports_streaming: true,
             supports_tools: false,
             context_window: None,

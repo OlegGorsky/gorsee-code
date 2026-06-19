@@ -49,6 +49,39 @@ impl AgentProfile {
     }
 }
 
+pub fn preferred_model_ids(role: &AgentRole) -> &'static [&'static str] {
+    match role {
+        AgentRole::Architect => &[
+            "glm-5.1",
+            "kimi-k2.6",
+            "deepseek-v4-pro",
+            "gpt-5.4",
+            "gpt-5.5",
+            "qwen3.7-max",
+        ],
+        AgentRole::Scout => &[
+            "vibe-lite-1",
+            "mimo-v2.5",
+            "deepseek-v4-flash",
+            "qwen3.7-plus",
+        ],
+        AgentRole::Coder => &[
+            "deepseek-v4-pro",
+            "deepseek-v4-flash",
+            "kimi-k2.6",
+            "qwen3.7-plus",
+        ],
+        AgentRole::Validator => &[
+            "kimi-k2.6",
+            "glm-5.1",
+            "deepseek-v4-pro",
+            "gpt-5.4-mini",
+            "qwen3.7-plus",
+        ],
+        AgentRole::Summarizer => &["vibe-lite-1", "mimo-v2.5", "deepseek-v4-flash"],
+    }
+}
+
 pub fn default_agent_matrix() -> Vec<AgentProfile> {
     vec![
         architect_profile(),
@@ -62,7 +95,7 @@ pub fn default_agent_matrix() -> Vec<AgentProfile> {
 fn architect_profile() -> AgentProfile {
     profile(
         AgentRole::Architect,
-        "neurogate/gpt-5",
+        preferred_model_ids(&AgentRole::Architect)[0],
         "high",
         &["read", "search", "repo_map"],
         40_000,
@@ -73,7 +106,7 @@ fn architect_profile() -> AgentProfile {
 fn scout_profile() -> AgentProfile {
     profile(
         AgentRole::Scout,
-        "neurogate/qwen-coder-fast",
+        preferred_model_ids(&AgentRole::Scout)[0],
         "low",
         &["read", "search", "repo_map"],
         12_000,
@@ -84,7 +117,7 @@ fn scout_profile() -> AgentProfile {
 fn coder_profile() -> AgentProfile {
     profile(
         AgentRole::Coder,
-        "neurogate/deepseek-coder",
+        preferred_model_ids(&AgentRole::Coder)[0],
         "medium",
         &["read", "search", "propose_patch", "run_test"],
         50_000,
@@ -95,7 +128,7 @@ fn coder_profile() -> AgentProfile {
 fn validator_profile() -> AgentProfile {
     profile(
         AgentRole::Validator,
-        "neurogate/gpt-5-mini",
+        preferred_model_ids(&AgentRole::Validator)[0],
         "medium",
         &["read", "diff", "run_test"],
         20_000,
@@ -106,7 +139,7 @@ fn validator_profile() -> AgentProfile {
 fn summarizer_profile() -> AgentProfile {
     profile(
         AgentRole::Summarizer,
-        "neurogate/cheap",
+        preferred_model_ids(&AgentRole::Summarizer)[0],
         "off",
         &["read_events", "write_summary"],
         8_000,

@@ -4,7 +4,7 @@ pub mod command;
 pub mod event;
 pub mod task;
 
-pub use agent::{default_agent_matrix, AgentProfile, AgentRole, AgentStatus};
+pub use agent::{default_agent_matrix, preferred_model_ids, AgentProfile, AgentRole, AgentStatus};
 pub use capability::ModelCapability;
 pub use command::{Command, CommandKind};
 pub use event::{Event, EventKind};
