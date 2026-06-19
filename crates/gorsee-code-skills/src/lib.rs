@@ -94,7 +94,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtins_include_foundation_skills() {
+    fn builtins_include_core_skills() {
         assert_eq!(skill_ids(), ["repo-audit", "bug-fix", "release-check"]);
     }
 }

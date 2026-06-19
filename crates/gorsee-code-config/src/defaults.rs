@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn default_config_contains_agent_matrix() {
-        let config = default_config("demo");
+        let config = default_config("workspace");
         assert!(config.agents.contains_key("architect"));
         assert!(config.agents.contains_key("coder"));
     }

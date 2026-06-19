@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::{AgentView, BudgetView, EventView, MissionControlState, SessionView, ToolCallView};
 
-pub fn fixture_state(name: &str) -> MissionControlState {
+pub fn preset_state(name: &str) -> MissionControlState {
     match name {
         "approval" | "approval-waiting" => approval_waiting(),
         "stale-limits" => stale_limits(),
@@ -88,7 +88,7 @@ fn state(
 fn session(id: &str, status: &str) -> SessionView {
     SessionView {
         id: id.into(),
-        title: "Foundation vertical slice".into(),
+        title: "Gorsee Code Workspace".into(),
         status: status.into(),
         repo: ".".into(),
         branch: "main".into(),
@@ -128,7 +128,7 @@ fn ledger(tokens: u64) -> TokenLedger {
     let mut ledger = TokenLedger::default();
     ledger.push(UsageRecord {
         agent_id: "coder".into(),
-        phase: "fixture".into(),
+        phase: "workspace".into(),
         model: "neurogate/gpt-5".into(),
         input_tokens: tokens,
         output_tokens: 0,
@@ -155,7 +155,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fixture_has_agents_and_timeline() {
+    fn preset_has_agents_and_timeline() {
         let state = mission_running();
         assert_eq!(state.agents.len(), 5);
         assert!(!state.timeline.is_empty());

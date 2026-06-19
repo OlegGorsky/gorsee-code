@@ -8,7 +8,7 @@ use gorsee_code_safety::Redactor;
 use gorsee_code_session::{export_markdown, SessionStore};
 use gorsee_code_skills::{builtin_skills, find_skill};
 use gorsee_code_tui::render_mission_control;
-use gorsee_code_ui_state::fixture_state;
+use gorsee_code_ui_state::workspace_state;
 use serde_json::json;
 
 use crate::commands_extra::{
@@ -22,7 +22,7 @@ use crate::{
 
 pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
     match cli.command {
-        None => render_tui("mission-running"),
+        None => render_workspace_tui(&options.root),
         Some(Command::Init) => init(&options.root),
         Some(Command::Setup) => setup(&options.root),
         Some(Command::Auth(args)) => {
@@ -39,14 +39,18 @@ pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
         Some(Command::Replay(args)) => replay(&options.root, args),
         Some(Command::Export(args)) => export(&options.root, args),
         Some(Command::Gateway(args)) => gateway(&options.root, &args.bind),
-        Some(Command::Tui(args)) => render_tui(&args.fixture),
-        Some(Command::Skills(args)) => skills(&options.root, args.command),
+        Some(Command::Tui) => render_workspace_tui(&options.root),
+        Some(Command::Skills(args)) => {
+            skills(&options.root, args.command, options.env_key.as_deref())
+        }
         Some(Command::Agents) => agents(),
-        Some(Command::Usage) => usage(),
+        Some(Command::Usage) => usage(&options.root),
         Some(Command::Tools) => tools(&options.root),
         Some(Command::Hooks) => hooks(),
         Some(Command::Capabilities) => capabilities(&options.root, options.env_key.as_deref()),
-        Some(Command::Exec(args)) | Some(Command::Mission(args)) => mission(&options.root, args),
+        Some(Command::Exec(args)) | Some(Command::Mission(args)) => {
+            mission(&options.root, args, options.env_key.as_deref())
+        }
     }
 }
 
@@ -224,18 +228,18 @@ fn export(root: &Path, args: SessionIdArgs) -> Result<String> {
 fn gateway(root: &Path, bind: &str) -> Result<String> {
     let addr: SocketAddr = bind.parse().context("parse gateway bind address")?;
     eprintln!("gateway: listening on http://{addr}");
-    let state = GatewayState::fixture(root);
+    let state = GatewayState::workspace(root);
     live::block_on(async move {
         serve(addr, state).await.context("serve gateway")?;
         Ok(format!("gateway: stopped {addr}\n"))
     })
 }
 
-fn render_tui(fixture: &str) -> Result<String> {
-    Ok(render_mission_control(&fixture_state(fixture)))
+fn render_workspace_tui(root: &Path) -> Result<String> {
+    Ok(render_mission_control(&workspace_state(root)))
 }
 
-fn skills(root: &Path, command: SkillsCommand) -> Result<String> {
+fn skills(root: &Path, command: SkillsCommand, env_key: Option<&str>) -> Result<String> {
     match command {
         SkillsCommand::List => {
             let mut out = "skills:\n".to_string();
@@ -248,6 +252,6 @@ fn skills(root: &Path, command: SkillsCommand) -> Result<String> {
             let skill = find_skill(&id).ok_or_else(|| anyhow!("unknown skill: {id}"))?;
             Ok(serde_json::to_string_pretty(&skill)?)
         }
-        SkillsCommand::Run { id, objective } => skill_mission(root, &id, objective),
+        SkillsCommand::Run { id, objective } => skill_mission(root, &id, objective, env_key),
     }
 }

@@ -11,11 +11,15 @@ rust-version.workspace = true
 chrono.workspace = true
 gorsee-code-artifacts = { path = "../gorsee-code-artifacts" }
 gorsee-code-core = { path = "../gorsee-code-core" }
+gorsee-code-neurogate = { path = "../gorsee-code-neurogate" }
 gorsee-code-safety = { path = "../gorsee-code-safety" }
 gorsee-code-session = { path = "../gorsee-code-session" }
+gorsee-code-tool-runtime = { path = "../gorsee-code-tool-runtime" }
+gorsee-code-tools = { path = "../gorsee-code-tools" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

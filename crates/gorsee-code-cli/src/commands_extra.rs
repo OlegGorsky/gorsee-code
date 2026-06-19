@@ -1,15 +1,16 @@
 use std::{fs, path::Path};
 
 use anyhow::{anyhow, Context, Result};
-use gorsee_code_agent::MissionRunner;
+use gorsee_code_agent::{MissionRunSummary, MissionRunner};
 use gorsee_code_config::{default_config, GorseeConfig};
 use gorsee_code_core::{default_agent_matrix, MissionSpec};
 use gorsee_code_gateway::GatewayState;
 use gorsee_code_hooks::builtin_hooks;
+use gorsee_code_neurogate::NeuroGateClient;
 use gorsee_code_session::SessionManifest;
 use gorsee_code_skills::find_skill;
 use gorsee_code_tools::builtin_registry;
-use gorsee_code_ui_state::mission_running;
+use gorsee_code_ui_state::workspace_state;
 
 use crate::{args::ObjectiveArgs, live, paths};
 
@@ -27,10 +28,10 @@ pub fn agents() -> Result<String> {
     Ok(out)
 }
 
-pub fn usage() -> Result<String> {
-    let state = mission_running();
+pub fn usage(root: &Path) -> Result<String> {
+    let state = workspace_state(root);
     Ok(format!(
-        "usage: fixture tokens={}/{} percent={:.1}\n",
+        "usage: current tokens={}/{} percent={:.1}\n",
         state.budget.used_tokens, state.budget.limit_tokens, state.budget.percent_used
     ))
 }
@@ -59,20 +60,18 @@ pub fn capabilities(root: &Path, env_key: Option<&str>) -> Result<String> {
             Ok(format!("capabilities: live models={}\n", models.len()))
         });
     }
-    let state = GatewayState::fixture(root);
+    let state = GatewayState::workspace(root);
     Ok(format!(
-        "capabilities: fixture models={}\n",
+        "capabilities: configured models={}\n",
         state.capabilities.len()
     ))
 }
 
-pub fn mission(root: &Path, args: ObjectiveArgs) -> Result<String> {
-    paths::ensure_layout(root)?;
+pub fn mission(root: &Path, args: ObjectiveArgs, env_key: Option<&str>) -> Result<String> {
     let objective = args.objective.join(" ");
-    let spec = MissionSpec::new(objective, root.display().to_string());
-    let summary = MissionRunner::new(paths::local_dir(root)).run_sequential(&spec)?;
+    let summary = run_mission(root, objective, env_key)?;
     Ok(format!(
-        "mission: scaffolded session={}\nevents={}\nagents={}\nartifacts={}\n",
+        "mission: completed session={}\nevents={}\nagents={}\nartifacts={}\n",
         summary.session_id,
         summary.events,
         summary.agents.join(","),
@@ -80,16 +79,34 @@ pub fn mission(root: &Path, args: ObjectiveArgs) -> Result<String> {
     ))
 }
 
-pub fn skill_mission(root: &Path, id: &str, objective: Vec<String>) -> Result<String> {
+pub fn run_mission(
+    root: &Path,
+    objective: impl Into<String>,
+    env_key: Option<&str>,
+) -> Result<MissionRunSummary> {
+    let client = require_live_client(root, env_key)?;
     paths::ensure_layout(root)?;
+    let spec = MissionSpec::new(objective, root.display().to_string());
+    Ok(MissionRunner::new(paths::local_dir(root)).run_sequential(&spec, &client)?)
+}
+
+pub fn skill_mission(
+    root: &Path,
+    id: &str,
+    objective: Vec<String>,
+    env_key: Option<&str>,
+) -> Result<String> {
+    let client = require_live_client(root, env_key)?;
     let skill = find_skill(id).ok_or_else(|| anyhow!("unknown skill: {id}"))?;
+    paths::ensure_layout(root)?;
     let objective = if objective.is_empty() {
         skill.instructions.clone()
     } else {
         objective.join(" ")
     };
     let spec = MissionSpec::new(objective, root.display().to_string());
-    let summary = MissionRunner::new(paths::local_dir(root)).run_skill(&spec, &skill.id)?;
+    let summary =
+        MissionRunner::new(paths::local_dir(root)).run_skill(&spec, &skill.id, &client)?;
     Ok(format!(
         "skill: {} session={}\nevents={}\nagents={}\nartifacts={}\n",
         skill.id,
@@ -98,6 +115,14 @@ pub fn skill_mission(root: &Path, id: &str, objective: Vec<String>) -> Result<St
         summary.agents.join(","),
         summary.artifacts.len()
     ))
+}
+
+fn require_live_client(root: &Path, env_key: Option<&str>) -> Result<NeuroGateClient> {
+    live::client(root, env_key)?.ok_or_else(missing_auth)
+}
+
+fn missing_auth() -> anyhow::Error {
+    anyhow!("missing_auth: run `gcode` and enter a NeuroGate API key or set NEUROGATE_API_KEY")
 }
 
 pub fn config_check(root: &Path) -> String {

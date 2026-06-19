@@ -1,8 +1,8 @@
 # Gorsee Code
 
 Gorsee Code is a local NeuroGate-native coding workspace.
-Install it once, run `gcode`, add your NeuroGate API key, and work from the
-terminal UI.
+Install it once, run `gcode`, add your NeuroGate API key, enter the mission
+objective, and work from Mission Control.
 
 ## Install
 
@@ -11,8 +11,8 @@ npm install -g @gorsee/code
 gcode
 ```
 
-The first `gcode` launch asks for a NeuroGate API key, stores it locally, and
-opens the coding TUI.
+The first `gcode` launch asks for a NeuroGate API key, stores it locally, asks
+for the mission objective, runs the agent matrix, and opens Mission Control.
 
 ## Common Commands
 

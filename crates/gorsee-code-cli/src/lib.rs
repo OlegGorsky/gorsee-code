@@ -3,6 +3,7 @@ pub mod auth;
 mod args;
 mod commands;
 mod commands_extra;
+mod interactive;
 mod live;
 mod paths;
 
@@ -55,4 +56,8 @@ where
         Err(error) => return Err(error.into()),
     };
     commands::run(cli, options)
+}
+
+pub fn run_interactive_tui(options: &CliOptions) -> Result<()> {
+    interactive::run(options)
 }

@@ -25,7 +25,7 @@ pub enum Command {
     Replay(SessionIdArgs),
     Export(SessionIdArgs),
     Gateway(GatewayArgs),
-    Tui(TuiArgs),
+    Tui,
     Skills(SkillsArgs),
     Agents,
     Usage,
@@ -68,12 +68,6 @@ pub struct SessionIdArgs {
 pub struct GatewayArgs {
     #[arg(long, default_value = "127.0.0.1:8765")]
     pub bind: String,
-}
-
-#[derive(Debug, Args)]
-pub struct TuiArgs {
-    #[arg(long, default_value = "mission-running")]
-    pub fixture: String,
 }
 
 #[derive(Debug, Args)]

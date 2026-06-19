@@ -4,12 +4,17 @@ use std::{
 };
 
 use anyhow::Result;
-use gorsee_code_cli::{auth, run_with_options, CliOptions};
+use gorsee_code_cli::{auth, run_interactive_tui, run_with_options, CliOptions};
 
 fn main() -> Result<()> {
     let args: Vec<OsString> = std::env::args_os().collect();
     let options = CliOptions::current()?;
     prompt_for_key_if_needed(&args, &options)?;
+
+    if args.len() == 1 {
+        run_interactive_tui(&options)?;
+        return Ok(());
+    }
 
     let output = run_with_options(args, options)?;
     print!("{output}");

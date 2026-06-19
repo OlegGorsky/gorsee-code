@@ -8,7 +8,7 @@ use gorsee_code_limits::UsageWindow;
 use gorsee_code_skills::{builtin_skills, Skill};
 use gorsee_code_tool_runtime::ToolManifest;
 use gorsee_code_tools::builtin_registry;
-use gorsee_code_ui_state::{mission_running, BudgetView, MissionControlState, SessionView};
+use gorsee_code_ui_state::{workspace_state, BudgetView, MissionControlState, SessionView};
 
 #[derive(Debug, Clone)]
 pub struct GatewayState {
@@ -23,21 +23,25 @@ pub struct GatewayState {
 }
 
 impl GatewayState {
-    pub fn fixture(workspace: impl AsRef<Path>) -> Self {
+    pub fn workspace(workspace: impl AsRef<Path>) -> Self {
         let workspace = workspace.as_ref();
         let tools = builtin_registry(workspace)
             .map(|registry| registry.manifests())
             .unwrap_or_default();
         Self {
             started_at: Utc::now(),
-            mission: mission_running(),
-            capabilities: fixture_capabilities(),
+            mission: workspace_state(workspace),
+            capabilities: configured_capabilities(),
             tools,
             skills: builtin_skills(),
             hooks: builtin_hooks(),
             limits: Vec::new(),
             artifacts: workspace_artifacts(workspace),
         }
+    }
+
+    pub fn sample(workspace: impl AsRef<Path>) -> Self {
+        Self::workspace(workspace)
     }
 
     pub fn sessions(&self) -> Vec<SessionView> {
@@ -99,7 +103,7 @@ fn mime_for_path(path: &Path) -> String {
     .into()
 }
 
-fn fixture_capabilities() -> Vec<ModelCapability> {
+fn configured_capabilities() -> Vec<ModelCapability> {
     vec![
         ModelCapability {
             id: "neurogate/gpt-5".into(),

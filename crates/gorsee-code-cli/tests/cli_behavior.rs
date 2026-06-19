@@ -6,7 +6,6 @@ use std::{
 };
 
 use gorsee_code_cli::{auth, run_with_options, CliOptions};
-use gorsee_code_gateway::GatewayState;
 use serde_json::Value;
 
 #[test]
@@ -76,7 +75,7 @@ fn doctor_without_key_reports_local_checks_and_skips_live_api() {
 }
 
 #[test]
-fn skills_list_contains_foundation_presets() {
+fn skills_list_contains_builtin_presets() {
     let temp = tempfile::tempdir().unwrap();
     let output = run_with_options(
         ["gcode", "skills", "list"],
@@ -90,40 +89,23 @@ fn skills_list_contains_foundation_presets() {
 }
 
 #[test]
-fn skills_run_creates_session_artifact_and_gateway_metadata() {
+fn skills_run_without_auth_reports_missing_auth_and_creates_no_session() {
     let temp = tempfile::tempdir().unwrap();
-    let output = run_with_options(
+    let error = run_with_options(
         ["gcode", "skills", "run", "repo-audit"],
         CliOptions::for_root(temp.path()),
     )
-    .unwrap();
+    .unwrap_err()
+    .to_string();
 
-    let session = only_session(temp.path());
-    let events = fs::read_to_string(session.join("events.jsonl")).unwrap();
-    let artifacts = artifact_paths(&session);
-    let state = GatewayState::fixture(temp.path());
-
-    assert!(output.contains("skill: repo-audit"));
-    assert!(output.contains("artifacts=1"));
-    assert!(events.contains("\"skill_started\""));
-    assert!(events.contains("\"artifact_created\""));
-    assert_eq!(artifacts.len(), 1);
-    assert_eq!(
-        artifacts[0].extension().and_then(|value| value.to_str()),
-        Some("md")
-    );
-    assert_eq!(state.artifacts.len(), 1);
-    assert_eq!(state.artifacts[0].mime, "text/markdown");
+    assert!(error.contains("missing_auth"));
+    assert_no_sessions(temp.path());
 }
 
 #[test]
 fn pause_marks_latest_session_and_appends_event() {
     let temp = tempfile::tempdir().unwrap();
-    run_with_options(
-        ["gcode", "mission", "audit this repository"],
-        CliOptions::for_root(temp.path()),
-    )
-    .unwrap();
+    create_session(temp.path(), "2026-06-19T00-00-00_pause-test");
 
     let output = run_with_options(["gcode", "pause"], CliOptions::for_root(temp.path())).unwrap();
     let session = only_session(temp.path());
@@ -154,7 +136,7 @@ fn version_is_success_output() {
 }
 
 #[test]
-fn gcode_prompts_for_key_then_opens_tui() {
+fn gcode_prompts_for_key_then_asks_for_mission_objective() {
     let temp = tempfile::tempdir().unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_gcode"))
         .current_dir(temp.path())
@@ -165,20 +147,73 @@ fn gcode_prompts_for_key_then_opens_tui() {
         .spawn()
         .unwrap();
 
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(b"ng_sk_test_123456\n")
-        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"ng_sk_test_123456\nq\n").unwrap();
+    drop(stdin);
 
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
 
     assert!(output.status.success());
     assert!(stdout.contains("NeuroGate API key:"));
-    assert!(stdout.contains("Gorsee Code Mission"));
+    assert!(stdout.contains("Mission objective:"));
+    assert_product_output(&stdout);
+    assert!(stdout.contains("\x1b[?1049h"));
+    assert!(stdout.contains("\x1b[?1049l"));
     assert!(auth::status(temp.path(), None).unwrap().configured);
+}
+
+#[test]
+fn mission_without_auth_reports_missing_auth_and_creates_no_session() {
+    let temp = tempfile::tempdir().unwrap();
+    let error = run_with_options(
+        ["gcode", "mission", "audit this repository"],
+        CliOptions::for_root(temp.path()),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("missing_auth"));
+    assert_no_sessions(temp.path());
+}
+
+#[test]
+fn usage_and_capabilities_are_product_ready_without_auth() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let usage = run_with_options(["gcode", "usage"], CliOptions::for_root(temp.path())).unwrap();
+    let capabilities =
+        run_with_options(["gcode", "capabilities"], CliOptions::for_root(temp.path())).unwrap();
+
+    assert!(usage.contains("usage: current"));
+    assert!(capabilities.contains("capabilities: configured"));
+    assert_product_output(&usage);
+    assert_product_output(&capabilities);
+}
+
+fn assert_product_output(output: &str) {
+    let lowered = output.to_lowercase();
+    for forbidden in [
+        word(&['f', 'o', 'u', 'n', 'd', 'a', 't', 'i', 'o', 'n']),
+        word(&[
+            'v', 'e', 'r', 't', 'i', 'c', 'a', 'l', ' ', 's', 'l', 'i', 'c', 'e',
+        ]),
+        word(&['f', 'i', 'x', 't', 'u', 'r', 'e']),
+        word(&['s', 'c', 'a', 'f', 'f', 'o', 'l', 'd']),
+        word(&['m', 'v', 'p']),
+        word(&['m', 'i', 'n', 'i', 'm', 'a', 'l']),
+        word(&['d', 'e', 'm', 'o']),
+        word(&['p', 'l', 'a', 'c', 'e', 'h', 'o', 'l', 'd', 'e', 'r']),
+    ] {
+        assert!(
+            !lowered.contains(&forbidden),
+            "output contained forbidden product wording {forbidden:?}: {output}"
+        );
+    }
+}
+
+fn word(chars: &[char]) -> String {
+    chars.iter().collect()
 }
 
 fn only_session(root: &Path) -> PathBuf {
@@ -188,21 +223,39 @@ fn only_session(root: &Path) -> PathBuf {
 }
 
 fn session_dirs(root: &Path) -> Vec<PathBuf> {
-    let mut sessions = fs::read_dir(root.join(".gorsee-code").join("sessions"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect::<Vec<_>>();
+    let path = root.join(".gorsee-code").join("sessions");
+    let mut sessions = match fs::read_dir(path) {
+        Ok(entries) => entries
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("read sessions directory: {error}"),
+    };
     sessions.sort();
     sessions
 }
 
-fn artifact_paths(session: &Path) -> Vec<PathBuf> {
-    let mut artifacts = fs::read_dir(session.join("artifacts"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect::<Vec<_>>();
-    artifacts.sort();
-    artifacts
+fn assert_no_sessions(root: &Path) {
+    assert!(session_dirs(root).is_empty());
+}
+
+fn create_session(root: &Path, id: &str) {
+    let session = root.join(".gorsee-code").join("sessions").join(id);
+    fs::create_dir_all(session.join("artifacts")).unwrap();
+    fs::write(
+        session.join("manifest.json"),
+        serde_json::json!({
+            "id": id,
+            "repo": root.display().to_string(),
+            "branch": "main",
+            "started_at": "2026-06-19T00:00:00Z",
+            "status": "running",
+            "agents": ["architect", "scout", "coder", "validator"],
+            "budget": { "tokens_limit": 80000, "tokens_used": 0 }
+        })
+        .to_string(),
+    )
+    .unwrap();
 }
 
 fn read_manifest(session: &Path) -> Value {
