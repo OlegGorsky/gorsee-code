@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookPoint {
-    BeforeMission,
-    AfterMission,
+    BeforeSession,
+    AfterSession,
     BeforeModelCall,
     AfterModelCall,
     BeforeTool,
@@ -87,7 +87,7 @@ pub fn builtin_hooks() -> Vec<HookDefinition> {
         definition(
             "budget-warning",
             HookPoint::OnBudgetWarning,
-            "Warn when mission budget is near stop.",
+            "Warn when session budget is near stop.",
         ),
         definition(
             "limit-warning",

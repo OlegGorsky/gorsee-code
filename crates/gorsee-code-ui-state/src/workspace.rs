@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -6,20 +7,20 @@ use std::{
 };
 
 use gorsee_code_core::{default_agent_matrix, AgentStatus, Event};
-use gorsee_code_session::SessionManifest;
+use gorsee_code_session::{ApprovalRecord, ApprovalStatus, SessionManifest};
 
-use crate::{AgentView, BudgetView, EventView, MissionControlState, SessionView};
+use crate::{AgentView, BudgetView, EventView, SessionView, ToolCallView, WorkspaceState};
 
-pub fn workspace_state(root: impl AsRef<Path>) -> MissionControlState {
+pub fn workspace_state(root: impl AsRef<Path>) -> WorkspaceState {
     let root = root.as_ref();
-    if let Some((manifest, events)) = latest_session(root) {
-        return session_state(root, manifest, events);
+    if let Some((manifest, events, approvals)) = latest_session(root) {
+        return session_state(root, manifest, events, approvals);
     }
     ready_state(root)
 }
 
-fn ready_state(root: &Path) -> MissionControlState {
-    MissionControlState {
+fn ready_state(root: &Path) -> WorkspaceState {
+    WorkspaceState {
         session: SessionView {
             id: "workspace".into(),
             title: "Gorsee Code Workspace".into(),
@@ -39,8 +40,9 @@ fn session_state(
     root: &Path,
     manifest: SessionManifest,
     events: Vec<Event>,
-) -> MissionControlState {
-    MissionControlState {
+    approvals: Vec<ApprovalRecord>,
+) -> WorkspaceState {
+    WorkspaceState {
         session: SessionView {
             id: manifest.id.clone(),
             title: "Gorsee Code Workspace".into(),
@@ -51,16 +53,17 @@ fn session_state(
         agents: agent_views(&manifest.status, manifest.budget.tokens_used),
         timeline: event_views(events),
         budget: budget_view(manifest.budget.tokens_used, manifest.budget.tokens_limit),
-        approvals: Vec::new(),
+        approvals: approval_views(approvals),
         gateway_status: "local".into(),
     }
 }
 
-fn latest_session(root: &Path) -> Option<(SessionManifest, Vec<Event>)> {
+fn latest_session(root: &Path) -> Option<(SessionManifest, Vec<Event>, Vec<ApprovalRecord>)> {
     let dir = latest_session_dir(root)?;
     let manifest = read_manifest(&dir)?;
     let events = read_events(&dir);
-    Some((manifest, events))
+    let approvals = read_approvals(&dir);
+    Some((manifest, events, approvals))
 }
 
 fn latest_session_dir(root: &Path) -> Option<PathBuf> {
@@ -68,8 +71,27 @@ fn latest_session_dir(root: &Path) -> Option<PathBuf> {
     entries
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
-        .map(|entry| entry.path())
-        .max_by_key(|path| path.file_name().map(|name| name.to_owned()))
+        .filter_map(|entry| {
+            let path = entry.path();
+            let manifest = read_manifest(&path)?;
+            Some((path, manifest))
+        })
+        .max_by(|left, right| compare_sessions(&left.1, &right.1))
+        .map(|(path, _)| path)
+}
+
+fn compare_sessions(left: &SessionManifest, right: &SessionManifest) -> Ordering {
+    active_rank(&left.status)
+        .cmp(&active_rank(&right.status))
+        .then_with(|| left.started_at.cmp(&right.started_at))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+fn active_rank(status: &str) -> u8 {
+    match status {
+        "running" | "waiting_approval" | "paused" => 1,
+        _ => 0,
+    }
 }
 
 fn read_manifest(session_dir: &Path) -> Option<SessionManifest> {
@@ -89,6 +111,18 @@ fn read_events(session_dir: &Path) -> Vec<Event> {
     events
 }
 
+fn read_approvals(session_dir: &Path) -> Vec<ApprovalRecord> {
+    let Ok(file) = fs::File::open(session_dir.join("approvals.jsonl")) else {
+        return Vec::new();
+    };
+    let mut approvals = BufReader::new(file)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<ApprovalRecord>(&line.ok()?).ok())
+        .collect::<Vec<_>>();
+    approvals.sort_by_key(|approval| approval.sequence);
+    approvals
+}
+
 fn event_views(events: Vec<Event>) -> Vec<EventView> {
     if events.is_empty() {
         return vec![ready_event()];
@@ -100,11 +134,24 @@ fn event_views(events: Vec<Event>) -> Vec<EventView> {
         .collect()
 }
 
+fn approval_views(approvals: Vec<ApprovalRecord>) -> Vec<ToolCallView> {
+    approvals
+        .into_iter()
+        .filter(|approval| approval.status == ApprovalStatus::Pending)
+        .map(|approval| ToolCallView {
+            id: approval.id,
+            name: approval.tool_name,
+            status: "pending".into(),
+            risk: format!("{:?}", approval.risk).to_lowercase(),
+        })
+        .collect()
+}
+
 fn sanitize_event(mut event: EventView) -> EventView {
     event.summary = event.summary.replace(&legacy_workspace_word(), "workspace");
     event.summary = event
         .summary
-        .replace("mission workspace finished", "mission finished");
+        .replace("session workspace finished", "session finished");
     event
 }
 
@@ -139,6 +186,7 @@ fn agent_status(status: &str, index: usize) -> AgentStatus {
     match status {
         "finished" => AgentStatus::Finished,
         "failed" => AgentStatus::Failed,
+        "waiting_approval" => AgentStatus::WaitingApproval,
         "running" => running_status(index),
         _ => AgentStatus::Idle,
     }

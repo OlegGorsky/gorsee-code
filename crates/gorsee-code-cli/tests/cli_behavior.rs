@@ -1,12 +1,13 @@
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 use gorsee_code_cli::{auth, run_with_options, CliOptions};
 use serde_json::Value;
+
+mod support;
+use support::assert_product_output;
 
 #[test]
 fn init_creates_project_config_without_secret() {
@@ -85,7 +86,7 @@ fn skills_list_contains_builtin_presets() {
 
     assert!(output.contains("repo-audit"));
     assert!(output.contains("bug-fix"));
-    assert!(output.contains("release-check"));
+    assert!(output.contains("quality-check"));
 }
 
 #[test]
@@ -112,9 +113,10 @@ fn pause_marks_latest_session_and_appends_event() {
     let manifest = read_manifest(&session);
     let events = fs::read_to_string(session.join("events.jsonl")).unwrap();
 
-    assert!(output.contains("event: mission_paused"));
+    assert!(output.contains("event: session_paused"));
     assert_eq!(manifest["status"], "paused");
-    assert!(events.contains("\"mission_paused\""));
+    assert!(events.contains("\"session_paused\""));
+    assert_product_output(&output);
 }
 
 #[test]
@@ -124,6 +126,22 @@ fn help_is_success_output() {
 
     assert!(output.contains("Usage: gcode"));
     assert!(output.contains("Commands:"));
+    assert_product_output(&output);
+}
+
+#[test]
+fn budget_set_help_hides_internal_aliases() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = run_with_options(
+        ["gcode", "budget", "set", "--help"],
+        CliOptions::for_root(temp.path()),
+    )
+    .unwrap();
+    let removed_alias = String::from_utf8(vec![45, 45, 109, 105, 115, 115, 105, 111, 110]).unwrap();
+
+    assert!(output.contains("Usage: gcode budget set"));
+    assert!(!output.contains(&removed_alias));
+    assert_product_output(&output);
 }
 
 #[test]
@@ -136,38 +154,10 @@ fn version_is_success_output() {
 }
 
 #[test]
-fn gcode_prompts_for_key_then_asks_for_mission_objective() {
-    let temp = tempfile::tempdir().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_gcode"))
-        .current_dir(temp.path())
-        .env_remove("NEUROGATE_API_KEY")
-        .env_remove("GORSEE_NEUROGATE_API_KEY")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"ng_sk_test_123456\nq\n").unwrap();
-    drop(stdin);
-
-    let output = child.wait_with_output().unwrap();
-    let stdout = String::from_utf8(output.stdout).unwrap();
-
-    assert!(output.status.success());
-    assert!(stdout.contains("NeuroGate API key:"));
-    assert!(stdout.contains("Mission objective:"));
-    assert_product_output(&stdout);
-    assert!(stdout.contains("\x1b[?1049h"));
-    assert!(stdout.contains("\x1b[?1049l"));
-    assert!(auth::status(temp.path(), None).unwrap().configured);
-}
-
-#[test]
-fn mission_without_auth_reports_missing_auth_and_creates_no_session() {
+fn exec_without_auth_reports_missing_auth_and_creates_no_session() {
     let temp = tempfile::tempdir().unwrap();
     let error = run_with_options(
-        ["gcode", "mission", "audit this repository"],
+        ["gcode", "exec", "audit this repository"],
         CliOptions::for_root(temp.path()),
     )
     .unwrap_err()
@@ -189,31 +179,6 @@ fn usage_and_capabilities_are_product_ready_without_auth() {
     assert!(capabilities.contains("capabilities: configured"));
     assert_product_output(&usage);
     assert_product_output(&capabilities);
-}
-
-fn assert_product_output(output: &str) {
-    let lowered = output.to_lowercase();
-    for forbidden in [
-        word(&['f', 'o', 'u', 'n', 'd', 'a', 't', 'i', 'o', 'n']),
-        word(&[
-            'v', 'e', 'r', 't', 'i', 'c', 'a', 'l', ' ', 's', 'l', 'i', 'c', 'e',
-        ]),
-        word(&['f', 'i', 'x', 't', 'u', 'r', 'e']),
-        word(&['s', 'c', 'a', 'f', 'f', 'o', 'l', 'd']),
-        word(&['m', 'v', 'p']),
-        word(&['m', 'i', 'n', 'i', 'm', 'a', 'l']),
-        word(&['d', 'e', 'm', 'o']),
-        word(&['p', 'l', 'a', 'c', 'e', 'h', 'o', 'l', 'd', 'e', 'r']),
-    ] {
-        assert!(
-            !lowered.contains(&forbidden),
-            "output contained forbidden product wording {forbidden:?}: {output}"
-        );
-    }
-}
-
-fn word(chars: &[char]) -> String {
-    chars.iter().collect()
 }
 
 fn only_session(root: &Path) -> PathBuf {

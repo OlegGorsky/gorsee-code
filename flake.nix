@@ -1,5 +1,5 @@
 {
-  description = "Gorsee Code development shell";
+  description = "Gorsee Code workspace";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

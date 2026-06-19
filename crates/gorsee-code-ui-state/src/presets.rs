@@ -2,20 +2,20 @@ use gorsee_code_core::{default_agent_matrix, AgentStatus, Event, EventKind};
 use gorsee_code_usage::{BudgetPolicy, TokenLedger, UsageRecord};
 use serde_json::json;
 
-use crate::{AgentView, BudgetView, EventView, MissionControlState, SessionView, ToolCallView};
+use crate::{AgentView, BudgetView, EventView, SessionView, ToolCallView, WorkspaceState};
 
-pub fn preset_state(name: &str) -> MissionControlState {
+pub fn preset_state(name: &str) -> WorkspaceState {
     match name {
         "approval" | "approval-waiting" => approval_waiting(),
         "stale-limits" => stale_limits(),
         "failed-tool" => failed_tool(),
-        _ => mission_running(),
+        _ => workspace_running(),
     }
 }
 
-pub fn mission_running() -> MissionControlState {
+pub fn workspace_running() -> WorkspaceState {
     state(
-        "mission-running",
+        "workspace-running",
         "running",
         vec![],
         ledger(57_000),
@@ -23,7 +23,7 @@ pub fn mission_running() -> MissionControlState {
     )
 }
 
-pub fn approval_waiting() -> MissionControlState {
+pub fn approval_waiting() -> WorkspaceState {
     let approval = ToolCallView {
         id: "tool-1".into(),
         name: "apply_patch".into(),
@@ -39,7 +39,7 @@ pub fn approval_waiting() -> MissionControlState {
     )
 }
 
-pub fn stale_limits() -> MissionControlState {
+pub fn stale_limits() -> WorkspaceState {
     state(
         "stale-limits",
         "running",
@@ -49,7 +49,7 @@ pub fn stale_limits() -> MissionControlState {
     )
 }
 
-pub fn failed_tool() -> MissionControlState {
+pub fn failed_tool() -> WorkspaceState {
     let mut view = state("failed-tool", "failed", vec![], ledger(18_000), "online");
     view.timeline.push(EventView::from_event(&Event::new(
         4,
@@ -67,7 +67,7 @@ fn state(
     approvals: Vec<ToolCallView>,
     ledger: TokenLedger,
     gateway_status: &str,
-) -> MissionControlState {
+) -> WorkspaceState {
     let agents = default_agent_matrix()
         .iter()
         .enumerate()
@@ -75,7 +75,7 @@ fn state(
             AgentView::from_profile(profile, status_for(index), (index as u64 + 1) * 4_000)
         })
         .collect();
-    MissionControlState {
+    WorkspaceState {
         session: session(id, status),
         agents,
         timeline: timeline(id),
@@ -97,7 +97,7 @@ fn session(id: &str, status: &str) -> SessionView {
 
 fn timeline(session_id: &str) -> Vec<EventView> {
     [
-        (1, EventKind::MissionStarted, "mission started", None),
+        (1, EventKind::SessionStarted, "session started", None),
         (
             2,
             EventKind::AgentStarted,
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn preset_has_agents_and_timeline() {
-        let state = mission_running();
+        let state = workspace_running();
         assert_eq!(state.agents.len(), 5);
         assert!(!state.timeline.is_empty());
     }

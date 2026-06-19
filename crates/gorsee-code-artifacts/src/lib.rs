@@ -50,14 +50,40 @@ impl ArtifactStore {
             mime,
         })
     }
+
+    pub fn write_named_text(
+        &self,
+        name: &str,
+        mime: impl Into<String>,
+        text: &str,
+    ) -> Result<ArtifactRecord, ArtifactError> {
+        fs::create_dir_all(&self.root)?;
+        let mime = mime.into();
+        let path = self.root.join(name);
+        fs::write(&path, text)?;
+        Ok(ArtifactRecord {
+            id: artifact_id(&path),
+            path: path.display().to_string(),
+            mime,
+        })
+    }
 }
 
 fn extension_for_mime(mime: &str) -> &'static str {
     match mime {
         "text/markdown" => "md",
         "application/json" => "json",
+        "application/x-ndjson" => "jsonl",
+        "text/x-diff" => "patch",
         _ => "txt",
     }
+}
+
+fn artifact_id(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("artifact")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -80,5 +106,18 @@ mod tests {
         let record = store.write_text("text/markdown", "# hello").unwrap();
         assert!(Path::new(&record.path).exists());
         assert!(record.path.ends_with(".md"));
+    }
+
+    #[test]
+    fn writes_named_text_artifact() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::new(temp.path());
+        let record = store
+            .write_named_text("usage.json", "application/json", "{}")
+            .unwrap();
+
+        assert_eq!(record.id, "usage");
+        assert!(Path::new(&record.path).exists());
+        assert!(record.path.ends_with("usage.json"));
     }
 }

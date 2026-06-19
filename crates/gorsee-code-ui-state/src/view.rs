@@ -47,7 +47,7 @@ pub struct BudgetView {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MissionControlState {
+pub struct WorkspaceState {
     pub session: SessionView,
     pub agents: Vec<AgentView>,
     pub timeline: Vec<EventView>,
@@ -104,8 +104,10 @@ fn summarize_event(event: &Event) -> String {
 
 fn kind_label(kind: &EventKind) -> &'static str {
     match kind {
-        EventKind::MissionStarted => "mission_started",
-        EventKind::MissionFinished => "mission_finished",
+        EventKind::SessionStarted => "session_started",
+        EventKind::SessionFinished => "session_finished",
+        EventKind::SessionPaused => "session_paused",
+        EventKind::SessionResumed => "session_resumed",
         EventKind::ToolRequested => "tool_requested",
         EventKind::ToolFinished => "tool_finished",
         EventKind::BudgetWarning => "budget_warning",

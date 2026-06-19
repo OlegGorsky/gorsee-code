@@ -23,14 +23,15 @@ pub fn default_config(project_name: impl Into<String>) -> GorseeConfig {
         project: ProjectConfig {
             name: project_name.into(),
             guidance_files: vec!["AGENTS.md".into(), "GORSEE.md".into(), "README.md".into()],
+            protected_paths: Vec::new(),
         },
         neurogate: NeuroGateConfig {
             endpoint: "https://api.neurogate.example/v1".into(),
             auth_source: AuthSource::Env,
         },
         budget: BudgetConfig {
-            mission_tokens: 80_000,
-            mission_usd: 2.0,
+            session_tokens: 80_000,
+            session_usd: 2.0,
             warn_at_percent: 75,
             stop_at_percent: 100,
         },

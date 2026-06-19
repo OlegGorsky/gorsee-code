@@ -10,7 +10,7 @@ impl Tool for FinalAnswerTool {
             name: "final_answer".into(),
             description: "Prepare a concise final answer for the user".into(),
             risk: RiskClass::Read,
-            capabilities: vec!["mission:final_answer".into()],
+            capabilities: vec!["session:final_answer".into()],
         }
     }
 

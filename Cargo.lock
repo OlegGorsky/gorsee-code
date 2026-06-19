@@ -162,6 +162,12 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
+name = "bitflags"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
@@ -203,6 +209,12 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "cfg_aliases"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "cfg_aliases"
@@ -307,7 +319,7 @@ version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
  "crossterm_winapi",
  "mio",
  "parking_lot",
@@ -338,6 +350,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "downcast-rs"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -358,6 +376,17 @@ name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
+
+[[package]]
+name = "filedescriptor"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
+dependencies = [
+ "libc",
+ "thiserror 1.0.69",
+ "winapi",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -487,16 +516,18 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-agent"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "gorsee-code-artifacts",
  "gorsee-code-core",
+ "gorsee-code-hooks",
  "gorsee-code-neurogate",
  "gorsee-code-safety",
  "gorsee-code-session",
  "gorsee-code-tool-runtime",
  "gorsee-code-tools",
+ "gorsee-code-usage",
  "serde",
  "serde_json",
  "tempfile",
@@ -506,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-artifacts"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "serde",
  "tempfile",
@@ -516,7 +547,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-cli"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -533,6 +564,8 @@ dependencies = [
  "gorsee-code-tools",
  "gorsee-code-tui",
  "gorsee-code-ui-state",
+ "portable-pty",
+ "rpassword",
  "serde",
  "serde_json",
  "tempfile",
@@ -541,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-config"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-core",
  "serde",
@@ -551,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-context"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "ignore",
  "serde",
@@ -560,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "serde",
@@ -570,14 +603,19 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-gateway"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum",
  "chrono",
+ "gorsee-code-agent",
  "gorsee-code-artifacts",
+ "gorsee-code-config",
  "gorsee-code-core",
  "gorsee-code-hooks",
  "gorsee-code-limits",
+ "gorsee-code-neurogate",
+ "gorsee-code-safety",
+ "gorsee-code-session",
  "gorsee-code-skills",
  "gorsee-code-tool-runtime",
  "gorsee-code-tools",
@@ -585,13 +623,15 @@ dependencies = [
  "gorsee-code-usage",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-stream",
+ "tower",
 ]
 
 [[package]]
 name = "gorsee-code-gateway-client"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-core",
  "gorsee-code-gateway",
@@ -604,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-hooks"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-limits",
  "gorsee-code-safety",
@@ -614,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-limits"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -622,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-neurogate"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "futures-util",
  "gorsee-code-core",
@@ -635,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-safety"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "regex",
  "serde",
@@ -645,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-session"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "gorsee-code-core",
@@ -659,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-skills"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-safety",
  "serde",
@@ -667,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-tool-runtime"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-safety",
  "serde",
@@ -677,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-tools"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-context",
  "gorsee-code-safety",
@@ -689,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-tui"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -700,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-ui-state"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "gorsee-code-core",
  "gorsee-code-session",
@@ -712,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "gorsee-code-usage"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "serde",
 ]
@@ -1017,6 +1057,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1092,6 +1138,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
+dependencies = [
+ "bitflags 2.13.0",
+ "cfg-if",
+ "cfg_aliases 0.1.1",
+ "libc",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1148,6 +1206,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "portable-pty"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4a596a2b3d2752d94f51fac2d4a96737b8705dddd311a32b9af47211f08671e"
+dependencies = [
+ "anyhow",
+ "bitflags 1.3.2",
+ "downcast-rs",
+ "filedescriptor",
+ "lazy_static",
+ "libc",
+ "log",
+ "nix",
+ "serial2",
+ "shared_library",
+ "shell-words",
+ "winapi",
+ "winreg",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1181,7 +1260,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
 dependencies = [
  "bytes",
- "cfg_aliases",
+ "cfg_aliases 0.2.1",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -1221,7 +1300,7 @@ version = "0.5.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "addec6a0dcad8a8d96a771f815f0eaf55f9d1805756410b39f5fa81332574cbd"
 dependencies = [
- "cfg_aliases",
+ "cfg_aliases 0.2.1",
  "libc",
  "once_cell",
  "socket2",
@@ -1285,7 +1364,7 @@ version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
 ]
 
 [[package]]
@@ -1373,6 +1452,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50a0e551c1e27e1731aba276dbeaeac73f53c7cd34d1bda485d02bd1e0f36844"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1384,11 +1484,11 @@ version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1397,7 +1497,7 @@ version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
@@ -1540,6 +1640,33 @@ dependencies = [
  "ryu",
  "serde",
 ]
+
+[[package]]
+name = "serial2"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6ea5562eeaed6936b8b54e086aa0f88b9e5b1bef45beb038e2519fa1185b1"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "shared_library"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a9e7e0f2bfae24d8a5b5a66c5b257a83c7412304311512a0c054cd5e619da11"
+dependencies = [
+ "lazy_static",
+ "libc",
+]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"
@@ -1851,7 +1978,7 @@ version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
  "bytes",
  "futures-util",
  "http",
@@ -2181,6 +2308,15 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
+dependencies = [
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
@@ -2333,6 +2469,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winreg"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]

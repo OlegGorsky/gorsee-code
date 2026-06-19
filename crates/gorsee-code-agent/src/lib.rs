@@ -1,12 +1,21 @@
 mod agent_loop;
+mod budget_events;
 mod client;
 mod error;
 mod events;
+mod execution;
 mod prompts;
 mod protocol;
 mod report;
+mod resume;
+mod resume_pending;
+mod resume_types;
 mod runner;
+mod session_artifacts;
+mod summary;
+mod tool_events;
 
 pub use client::ChatClient;
 pub use error::AgentRunError;
-pub use runner::{MissionRunSummary, MissionRunner};
+pub use runner::TaskRunner;
+pub use summary::TaskRunSummary;

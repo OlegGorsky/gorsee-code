@@ -13,7 +13,7 @@ pub struct Skill {
 }
 
 pub fn builtin_skills() -> Vec<Skill> {
-    vec![repo_audit_skill(), bug_fix_skill(), release_check_skill()]
+    vec![repo_audit_skill(), bug_fix_skill(), quality_check_skill()]
 }
 
 pub fn find_skill(id: &str) -> Option<Skill> {
@@ -59,11 +59,11 @@ fn bug_fix_skill() -> Skill {
     )
 }
 
-fn release_check_skill() -> Skill {
+fn quality_check_skill() -> Skill {
     skill(
-        "release-check",
-        "Release Check",
-        "Run quality gates and prepare a release readiness summary.",
+        "quality-check",
+        "Quality Check",
+        "Run quality gates and summarize the current workspace state.",
         &["git_status", "git_diff", "run_test", "final_answer"],
         &["validator", "summarizer"],
         RiskClass::Read,
@@ -95,6 +95,6 @@ mod tests {
 
     #[test]
     fn builtins_include_core_skills() {
-        assert_eq!(skill_ids(), ["repo-audit", "bug-fix", "release-check"]);
+        assert_eq!(skill_ids(), ["repo-audit", "bug-fix", "quality-check"]);
     }
 }

@@ -10,10 +10,15 @@ rust-version.workspace = true
 [dependencies]
 axum.workspace = true
 chrono.workspace = true
+gorsee-code-agent = { path = "../gorsee-code-agent" }
 gorsee-code-artifacts = { path = "../gorsee-code-artifacts" }
+gorsee-code-config = { path = "../gorsee-code-config" }
 gorsee-code-core = { path = "../gorsee-code-core" }
 gorsee-code-hooks = { path = "../gorsee-code-hooks" }
 gorsee-code-limits = { path = "../gorsee-code-limits" }
+gorsee-code-neurogate = { path = "../gorsee-code-neurogate" }
+gorsee-code-safety = { path = "../gorsee-code-safety" }
+gorsee-code-session = { path = "../gorsee-code-session" }
 gorsee-code-skills = { path = "../gorsee-code-skills" }
 gorsee-code-tool-runtime = { path = "../gorsee-code-tool-runtime" }
 gorsee-code-tools = { path = "../gorsee-code-tools" }
@@ -23,3 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tower = "0.5"

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, process::Command};
 
-use gorsee_code_safety::RiskClass;
+use gorsee_code_safety::{OutputBounds, RiskClass};
 use gorsee_code_tool_runtime::{Tool, ToolManifest, ToolOutput, ToolRuntimeError};
 use serde_json::Value;
 
@@ -36,7 +36,7 @@ impl Tool for RunTestTool {
             .current_dir(&self.root)
             .output()
             .map_err(handler)?;
-        Ok(ToolOutput::text(format_output(output)))
+        Ok(format_output(output))
     }
 }
 
@@ -57,13 +57,43 @@ fn ensure_allowed(command: &[String]) -> Result<(), ToolRuntimeError> {
     }
 }
 
-fn format_output(output: std::process::Output) -> String {
+fn format_output(output: std::process::Output) -> ToolOutput {
     let mut text = String::from_utf8_lossy(&output.stdout).to_string();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     text.push_str(&format!("\nexit_status={}", output.status));
-    text
+    let bounded = OutputBounds::default().apply(&text);
+    ToolOutput {
+        text: bounded.text,
+        json: None,
+        truncated: bounded.truncated,
+    }
 }
 
 fn handler(error: impl std::fmt::Display) -> ToolRuntimeError {
     ToolRuntimeError::Handler(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Output;
+
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn format_output_marks_long_test_output_as_truncated() {
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: vec![b'a'; OutputBounds::default().max_bytes + 1024],
+            stderr: Vec::new(),
+        };
+
+        let formatted = format_output(output);
+
+        assert!(formatted.truncated);
+        assert!(formatted.text.contains("output truncated"));
+    }
 }

@@ -57,6 +57,9 @@ impl Tool for ApplyPatchTool {
         let path = arg(&args, "path")?;
         let content = arg(&args, "content")?;
         let target = self.paths.resolve_for_write(path).map_err(handler)?;
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(handler)?;
+        }
         fs::write(&target, content).map_err(handler)?;
         Ok(ToolOutput::text(format!(
             "wrote {} bytes to {}",

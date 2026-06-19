@@ -6,12 +6,13 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 
-const version = require("../package.json").version;
+const pkg = require("../package.json");
+const version = pkg.version;
 const binDir = path.join(__dirname, "bin");
 const target = platformTarget(process.platform, process.arch);
 
 if (process.argv.includes("--check")) {
-  console.log(`asset=${target.asset}`);
+  checkPackage();
   process.exit(0);
 }
 
@@ -49,6 +50,27 @@ function platformTarget(platform, arch) {
     return { asset: "gcode-windows-x64.exe", exe: "gcode.exe" };
   }
   throw new Error(`unsupported platform: ${platform}-${arch}`);
+}
+
+function checkPackage() {
+  assert(pkg.bin && pkg.bin.gcode === "npm/gcode.js", "package bin.gcode must be npm/gcode.js");
+  assert(target.asset && target.exe, "platform target is incomplete");
+  assertFile("npm/gcode.js");
+  assertFile("npm/postinstall.js");
+  for (const file of pkg.files || []) {
+    assertFile(file);
+  }
+  console.log(`asset=${target.asset} bin=${pkg.bin.gcode} files=${(pkg.files || []).length}`);
+}
+
+function assertFile(file) {
+  assert(fs.existsSync(path.join(__dirname, "..", file)), `missing package file: ${file}`);
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 
 function download(url, output, redirects = 0) {
@@ -108,7 +130,6 @@ function ensureCommandInPath() {
     return;
   }
 
-  // ponytail: npm can use a global bin dir outside PATH; this makes the one-command install work.
   try {
     fs.symlinkSync(path.join(__dirname, "gcode.js"), link);
   } catch {}

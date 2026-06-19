@@ -23,7 +23,7 @@ pub fn set(root: &Path, api_key: &str) -> Result<AuthStatus> {
         api_key: api_key.to_string(),
     };
     let text = serde_json::to_string_pretty(&auth).context("render auth file")?;
-    fs::write(paths::auth_path(root), text).context("write auth file")?;
+    write_private(paths::auth_path(root), &text).context("write auth file")?;
     status(root, None)
 }
 
@@ -93,4 +93,25 @@ fn redact_key(key: &str) -> String {
         .rev()
         .collect();
     format!("{head}...{tail}")
+}
+
+#[cfg(unix)]
+fn write_private(path: impl AsRef<Path>, text: &str) -> Result<()> {
+    use std::{io::Write, os::unix::fs::PermissionsExt};
+
+    let path = path.as_ref();
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_private(path: impl AsRef<Path>, text: &str) -> Result<()> {
+    fs::write(path, text)?;
+    Ok(())
 }

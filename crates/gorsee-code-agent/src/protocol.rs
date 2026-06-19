@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::AgentRunError;
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct ModelTurn {
     #[serde(default)]
     pub(crate) message: Option<String>,
@@ -14,14 +14,14 @@ pub(crate) struct ModelTurn {
     pub(crate) final_answer: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct ModelToolCall {
     pub(crate) name: String,
     #[serde(default = "empty_args")]
     pub(crate) args: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AgentAnswer {
     pub(crate) agent_id: String,
     pub(crate) answer: String,
@@ -36,7 +36,7 @@ impl AgentAnswer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct ToolResult {
     pub(crate) agent_id: String,
     pub(crate) name: String,

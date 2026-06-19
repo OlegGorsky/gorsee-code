@@ -1,0 +1,58 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyAction {
+    Insert(char),
+    Backspace,
+    Submit,
+    Approve,
+    Deny,
+    Pause,
+    Resume,
+    Quit,
+    Ignore,
+}
+
+pub fn action_for_key(key: KeyEvent, prompt_empty: bool) -> KeyAction {
+    if is_ctrl_c(key) {
+        return KeyAction::Quit;
+    }
+    match key.code {
+        KeyCode::Esc => KeyAction::Quit,
+        KeyCode::Enter => KeyAction::Submit,
+        KeyCode::Backspace => KeyAction::Backspace,
+        KeyCode::Char(value) => action_for_char(value, prompt_empty),
+        _ => KeyAction::Ignore,
+    }
+}
+
+pub(crate) fn action_for_byte(byte: u8, prompt_empty: bool) -> KeyAction {
+    match byte {
+        b'\n' | b'\r' => KeyAction::Submit,
+        0x08 | 0x7f => KeyAction::Backspace,
+        0x03 | 0x1b => KeyAction::Quit,
+        value if value.is_ascii_graphic() || value == b' ' => {
+            action_for_char(value as char, prompt_empty)
+        }
+        _ => KeyAction::Ignore,
+    }
+}
+
+fn is_ctrl_c(key: KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+}
+
+fn action_for_char(value: char, prompt_empty: bool) -> KeyAction {
+    if !prompt_empty {
+        return KeyAction::Insert(value);
+    }
+    match value.to_ascii_lowercase() {
+        'a' => KeyAction::Approve,
+        'd' => KeyAction::Deny,
+        'p' => KeyAction::Pause,
+        'r' => KeyAction::Resume,
+        'q' => KeyAction::Quit,
+        _ => KeyAction::Insert(value),
+    }
+}

@@ -25,6 +25,8 @@ pub struct GorseeConfig {
 pub struct ProjectConfig {
     pub name: String,
     pub guidance_files: Vec<String>,
+    #[serde(default)]
+    pub protected_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,8 +45,8 @@ pub enum AuthSource {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BudgetConfig {
-    pub mission_tokens: u64,
-    pub mission_usd: f64,
+    pub session_tokens: u64,
+    pub session_usd: f64,
     pub warn_at_percent: u8,
     pub stop_at_percent: u8,
 }

@@ -1,9 +1,9 @@
 use std::{fs, path::Path};
 
 use anyhow::{anyhow, Context, Result};
-use gorsee_code_agent::{MissionRunSummary, MissionRunner};
+use gorsee_code_agent::{TaskRunSummary, TaskRunner};
 use gorsee_code_config::{default_config, GorseeConfig};
-use gorsee_code_core::{default_agent_matrix, MissionSpec};
+use gorsee_code_core::{default_agent_matrix, TaskSpec};
 use gorsee_code_gateway::GatewayState;
 use gorsee_code_hooks::builtin_hooks;
 use gorsee_code_neurogate::NeuroGateClient;
@@ -45,6 +45,28 @@ pub fn tools(root: &Path) -> Result<String> {
     Ok(out)
 }
 
+pub fn files(root: &Path) -> Result<String> {
+    let registry = builtin_registry(root).context("build tool registry")?;
+    let output = registry
+        .run("list_files", serde_json::json!({ "max": 200 }))
+        .context("list workspace files")?;
+    if output.text.trim().is_empty() {
+        return Ok("files: none\n".into());
+    }
+    Ok(format!("files:\n{}\n", output.text.trim_end()))
+}
+
+pub fn diff(root: &Path) -> Result<String> {
+    let registry = builtin_registry(root).context("build tool registry")?;
+    let output = registry
+        .run("git_diff", serde_json::json!({}))
+        .context("read git diff")?;
+    if output.text.trim().is_empty() {
+        return Ok("diff: clean\n".into());
+    }
+    Ok(format!("diff:\n{}\n", output.text.trim_end()))
+}
+
 pub fn hooks() -> Result<String> {
     let mut out = "hooks:\n".to_string();
     for hook in builtin_hooks() {
@@ -67,11 +89,11 @@ pub fn capabilities(root: &Path, env_key: Option<&str>) -> Result<String> {
     ))
 }
 
-pub fn mission(root: &Path, args: ObjectiveArgs, env_key: Option<&str>) -> Result<String> {
+pub fn execute(root: &Path, args: ObjectiveArgs, env_key: Option<&str>) -> Result<String> {
     let objective = args.objective.join(" ");
-    let summary = run_mission(root, objective, env_key)?;
+    let summary = run_task(root, objective, env_key)?;
     Ok(format!(
-        "mission: completed session={}\nevents={}\nagents={}\nartifacts={}\n",
+        "run: completed session={}\nevents={}\nagents={}\nartifacts={}\n",
         summary.session_id,
         summary.events,
         summary.agents.join(","),
@@ -79,18 +101,18 @@ pub fn mission(root: &Path, args: ObjectiveArgs, env_key: Option<&str>) -> Resul
     ))
 }
 
-pub fn run_mission(
+pub fn run_task(
     root: &Path,
     objective: impl Into<String>,
     env_key: Option<&str>,
-) -> Result<MissionRunSummary> {
+) -> Result<TaskRunSummary> {
     let client = require_live_client(root, env_key)?;
     paths::ensure_layout(root)?;
-    let spec = MissionSpec::new(objective, root.display().to_string());
-    Ok(MissionRunner::new(paths::local_dir(root)).run_sequential(&spec, &client)?)
+    let spec = TaskSpec::new(objective, root.display().to_string());
+    Ok(TaskRunner::new(paths::local_dir(root)).run_sequential(&spec, &client)?)
 }
 
-pub fn skill_mission(
+pub fn run_skill(
     root: &Path,
     id: &str,
     objective: Vec<String>,
@@ -104,9 +126,8 @@ pub fn skill_mission(
     } else {
         objective.join(" ")
     };
-    let spec = MissionSpec::new(objective, root.display().to_string());
-    let summary =
-        MissionRunner::new(paths::local_dir(root)).run_skill(&spec, &skill.id, &client)?;
+    let spec = TaskSpec::new(objective, root.display().to_string());
+    let summary = TaskRunner::new(paths::local_dir(root)).run_skill(&spec, &skill.id, &client)?;
     Ok(format!(
         "skill: {} session={}\nevents={}\nagents={}\nartifacts={}\n",
         skill.id,
@@ -117,7 +138,7 @@ pub fn skill_mission(
     ))
 }
 
-fn require_live_client(root: &Path, env_key: Option<&str>) -> Result<NeuroGateClient> {
+pub(crate) fn require_live_client(root: &Path, env_key: Option<&str>) -> Result<NeuroGateClient> {
     live::client(root, env_key)?.ok_or_else(missing_auth)
 }
 

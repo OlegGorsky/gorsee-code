@@ -6,10 +6,10 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
-    MissionStarted,
-    MissionPaused,
-    MissionResumed,
-    MissionFinished,
+    SessionStarted,
+    SessionPaused,
+    SessionResumed,
+    SessionFinished,
     AgentStarted,
     AgentThinking,
     AgentMessage,
@@ -77,8 +77,8 @@ mod tests {
 
     #[test]
     fn event_serializes_kind_as_snake_case() {
-        let event = Event::new(7, "s", None, EventKind::MissionStarted, json!({}));
+        let event = Event::new(7, "s", None, EventKind::SessionStarted, json!({}));
         let encoded = serde_json::to_value(event).unwrap();
-        assert_eq!(encoded["kind"], "mission_started");
+        assert_eq!(encoded["kind"], "session_started");
     }
 }

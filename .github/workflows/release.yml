@@ -35,6 +35,13 @@ jobs:
             bin: target/release/gcode.exe
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          package_version="$(node -p "require('./package.json').version")"
+          test "v${package_version}" = "$GITHUB_REF_NAME"
+      - run: npm test
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
@@ -84,6 +91,29 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
+      - run: npm test
+      - run: |
+          package_tarball="$(npm pack --silent)"
+          install_dir="$(mktemp -d)"
+          npm install -g "$package_tarball" --prefix "$install_dir/prefix" --loglevel=notice
+          "$install_dir/prefix/bin/gcode" --help | tee "$install_dir/help.txt"
+          node - "$install_dir/help.txt" <<'NODE'
+          const fs = require("fs");
+
+          const text = fs.readFileSync(process.argv[2], "utf8");
+          const encoded = "Zm91bmRhdGlvbgp2ZXJ0aWNhbCBzbGljZQpmaXh0dXJlCnNjYWZmb2xkCm12cAptaW5pbWFsCmRlbW8KcGxhY2Vob2xkZXIKbWlzc2lvbgo=";
+          const words = Buffer.from(encoded, "base64").toString("utf8").trim().split("\n");
+          const escapeRegExp = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const found = words.find((word) => {
+            const pattern = `(^|[^\\p{L}\\p{N}_])${escapeRegExp(word)}([^\\p{L}\\p{N}_]|$)`;
+            return new RegExp(pattern, "iu").test(text);
+          });
+
+          if (found) {
+            console.error("npm smoke exposed internal product wording");
+            process.exit(1);
+          }
+          NODE
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

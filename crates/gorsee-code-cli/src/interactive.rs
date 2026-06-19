@@ -1,63 +1,87 @@
-use std::io::{self, Write};
+use std::path::PathBuf;
 
 use anyhow::Result;
-use gorsee_code_tui::run_mission_control;
+use gorsee_code_agent::TaskRunSummary;
+use gorsee_code_session::ApprovalDecision;
+use gorsee_code_tui::{run_app, TuiHandlers};
 use gorsee_code_ui_state::workspace_state;
 
-use crate::{commands_extra::run_mission, CliOptions};
+use crate::{
+    approval_commands, args::SessionIdArgs, commands_extra::run_task, session_commands, CliOptions,
+};
 
 pub fn run(options: &CliOptions) -> Result<()> {
-    let objective = prompt_objective()?;
-    if let Some(objective) = objective {
-        let summary = run_mission(&options.root, objective, options.env_key.as_deref())?;
-        print_summary(&summary);
+    let root = options.root.clone();
+    let load_root = root.clone();
+    run_app(
+        move || workspace_state(&load_root),
+        handlers(root, options.env_key.clone()),
+    )
+}
+
+fn handlers(root: PathBuf, env_key: Option<String>) -> TuiHandlers {
+    TuiHandlers::new(
+        submit_handler(root.clone(), env_key.clone()),
+        approve_handler(root.clone(), env_key.clone()),
+        deny_handler(root.clone(), env_key.clone()),
+        pause_handler(root.clone()),
+        resume_handler(root.clone()),
+        crate::tui_commands::handler(root, env_key),
+    )
+}
+
+fn submit_handler(
+    root: PathBuf,
+    env_key: Option<String>,
+) -> impl Fn(String) -> Result<String> + Send + Sync + 'static {
+    move |objective| {
+        let summary = run_task(&root, objective, env_key.as_deref())?;
+        Ok(format_summary(&summary))
     }
-    run_mission_control(&workspace_state(&options.root))
 }
 
-fn prompt_objective() -> Result<Option<String>> {
-    print!("Mission objective: ");
-    io::stdout().flush()?;
-
-    let mut objective = String::new();
-    io::stdin().read_line(&mut objective)?;
-    Ok(normalize_objective(&objective))
+fn approve_handler(
+    root: PathBuf,
+    env_key: Option<String>,
+) -> impl Fn(String) -> Result<String> + Send + Sync + 'static {
+    move |id| approval_commands::decide(&root, &id, ApprovalDecision::Approved, env_key.as_deref())
 }
 
-fn normalize_objective(input: &str) -> Option<String> {
-    let objective = input.trim();
-    if objective.is_empty() || matches!(objective, "q" | "quit" | "exit") {
-        return None;
+fn deny_handler(
+    root: PathBuf,
+    env_key: Option<String>,
+) -> impl Fn(String) -> Result<String> + Send + Sync + 'static {
+    move |id| approval_commands::decide(&root, &id, ApprovalDecision::Denied, env_key.as_deref())
+}
+
+fn pause_handler(root: PathBuf) -> impl Fn(String) -> Result<String> + Send + Sync + 'static {
+    move |id| {
+        session_commands::pause(
+            &root,
+            SessionIdArgs {
+                session_id: Some(id),
+            },
+        )
     }
-    Some(objective.to_string())
 }
 
-fn print_summary(summary: &gorsee_code_agent::MissionRunSummary) {
-    println!(
-        "mission: completed session={}\nevents={}\nagents={}\nartifacts={}",
+fn resume_handler(root: PathBuf) -> impl Fn(String) -> Result<String> + Send + Sync + 'static {
+    move |id| {
+        session_commands::resume(
+            &root,
+            SessionIdArgs {
+                session_id: Some(id),
+            },
+        )
+    }
+}
+
+fn format_summary(summary: &TaskRunSummary) -> String {
+    format!(
+        "run: completed session={}\nevents={}\nagents={}\nartifacts={}",
         summary.session_id,
         summary.events,
         summary.agents.join(","),
         summary.artifacts.len()
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn objective_input_trims_text() {
-        assert_eq!(
-            normalize_objective("  fix auth tests  \n"),
-            Some("fix auth tests".into())
-        );
-    }
-
-    #[test]
-    fn objective_input_quit_is_not_a_mission() {
-        assert_eq!(normalize_objective("q\n"), None);
-        assert_eq!(normalize_objective("quit\n"), None);
-        assert_eq!(normalize_objective("exit\n"), None);
-    }
+    )
 }

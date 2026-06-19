@@ -1,10 +1,7 @@
-use std::{
-    ffi::OsString,
-    io::{self, Write},
-};
+use std::ffi::OsString;
 
 use anyhow::Result;
-use gorsee_code_cli::{auth, run_interactive_tui, run_with_options, CliOptions};
+use gorsee_code_cli::{auth, run_interactive_tui, run_with_options, secret_prompt, CliOptions};
 
 fn main() -> Result<()> {
     let args: Vec<OsString> = std::env::args_os().collect();
@@ -26,11 +23,7 @@ fn prompt_for_key_if_needed(args: &[OsString], options: &CliOptions) -> Result<(
         return Ok(());
     }
 
-    print!("NeuroGate API key: ");
-    io::stdout().flush()?;
-
-    let mut key = String::new();
-    io::stdin().read_line(&mut key)?;
+    let key = secret_prompt::read_api_key()?;
     let key = key.trim();
     if !key.is_empty() {
         auth::set(&options.root, key)?;

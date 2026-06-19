@@ -31,9 +31,11 @@ gorsee-code-skills = { path = "../gorsee-code-skills" }
 gorsee-code-tools = { path = "../gorsee-code-tools" }
 gorsee-code-tui = { path = "../gorsee-code-tui" }
 gorsee-code-ui-state = { path = "../gorsee-code-ui-state" }
+rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+portable-pty.workspace = true
 tempfile.workspace = true

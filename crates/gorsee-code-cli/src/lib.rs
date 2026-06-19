@@ -1,11 +1,24 @@
 pub mod auth;
 
+mod approval_commands;
 mod args;
+mod budget_commands;
+mod checkpoint_commands;
 mod commands;
 mod commands_extra;
+mod config_file;
 mod interactive;
+mod limit_commands;
 mod live;
+mod model_commands;
 mod paths;
+mod project_commands;
+mod protection_commands;
+mod route_commands;
+pub mod secret_prompt;
+mod session_commands;
+mod tui_commands;
+mod uninstall_commands;
 
 use std::path::{Path, PathBuf};
 

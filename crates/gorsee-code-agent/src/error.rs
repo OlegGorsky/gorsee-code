@@ -17,6 +17,8 @@ pub enum AgentRunError {
     Tool(#[from] ToolRuntimeError),
     #[error("path policy failed: {0}")]
     Path(#[from] PathPolicyError),
+    #[error("waiting for approval: {0}")]
+    WaitingApproval(String),
     #[error("runtime failed: {0}")]
     Runtime(String),
     #[error("invalid model response: {0}")]

@@ -1,29 +1,35 @@
 use std::path::Path;
 
 use gorsee_code_artifacts::{ArtifactError, ArtifactRecord, ArtifactStore};
-use gorsee_code_core::MissionSpec;
+use gorsee_code_core::TaskSpec;
+use gorsee_code_safety::Redactor;
 
 use crate::protocol::{AgentAnswer, ToolResult};
 
 pub(crate) fn write_report(
     session_dir: &Path,
-    spec: &MissionSpec,
+    spec: &TaskSpec,
     skill_id: Option<&str>,
     answers: &[AgentAnswer],
     results: &[ToolResult],
 ) -> Result<ArtifactRecord, ArtifactError> {
     let text = report_text(spec, skill_id, answers, results);
-    ArtifactStore::new(session_dir.join("artifacts")).write_text("text/markdown", &text)
+    let text = Redactor::default().redact(&text);
+    ArtifactStore::new(session_dir.join("artifacts")).write_named_text(
+        "report.md",
+        "text/markdown",
+        &text,
+    )
 }
 
 fn report_text(
-    spec: &MissionSpec,
+    spec: &TaskSpec,
     skill_id: Option<&str>,
     answers: &[AgentAnswer],
     results: &[ToolResult],
 ) -> String {
     let mut text = format!(
-        "# Gorsee Code Mission Report\n\n- Objective: {}\n- Skill: {}\n",
+        "# Gorsee Code Run Report\n\n- Request: {}\n- Skill: {}\n",
         spec.objective,
         skill_id.unwrap_or("none")
     );

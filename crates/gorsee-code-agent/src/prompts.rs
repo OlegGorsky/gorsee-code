@@ -1,4 +1,4 @@
-use gorsee_code_core::{AgentProfile, MissionSpec};
+use gorsee_code_core::{AgentProfile, TaskSpec};
 use gorsee_code_neurogate::{ChatMessage, ChatRequest};
 use gorsee_code_tool_runtime::ToolManifest;
 use serde_json::json;
@@ -7,7 +7,7 @@ use crate::protocol::{AgentAnswer, ToolResult};
 
 pub(crate) struct PromptContext<'a> {
     pub(crate) profile: &'a AgentProfile,
-    pub(crate) spec: &'a MissionSpec,
+    pub(crate) spec: &'a TaskSpec,
     pub(crate) skill_id: Option<&'a str>,
     pub(crate) tools: &'a [ToolManifest],
     pub(crate) previous_answers: &'a [AgentAnswer],
