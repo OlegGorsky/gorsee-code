@@ -212,20 +212,24 @@ impl Drop for TerminalSession {
 
 fn draw_app(stdout: &mut impl Write, state: &WorkspaceState, app: &WorkspaceApp) -> Result<()> {
     execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
-    write!(stdout, "{}", render_app(state, app))?;
+    write!(stdout, "{}", terminal_screen(&render_app(state, app)))?;
     stdout.flush()?;
     Ok(())
 }
 
 fn draw_workspace(stdout: &mut impl Write, state: &WorkspaceState) -> Result<()> {
     execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
-    write!(
-        stdout,
+    let screen = format!(
         "{}\nq quit | Esc close | Ctrl-C cancel\n",
         render_workspace(state)
-    )?;
+    );
+    write!(stdout, "{}", terminal_screen(&screen))?;
     stdout.flush()?;
     Ok(())
+}
+
+fn terminal_screen(screen: &str) -> String {
+    screen.replace('\n', "\r\n")
 }
 
 fn read_until_quit() -> Result<()> {
@@ -239,5 +243,15 @@ fn read_until_quit() -> Result<()> {
         if matches!(byte[0], b'q' | b'Q' | 0x1b | 0x03) {
             return Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_screen_uses_carriage_returns_for_newlines() {
+        assert_eq!(terminal_screen("one\ntwo\n"), "one\r\ntwo\r\n");
     }
 }

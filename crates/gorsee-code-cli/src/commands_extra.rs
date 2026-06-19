@@ -149,6 +149,11 @@ fn missing_auth() -> anyhow::Error {
 pub fn config_check(root: &Path) -> String {
     match GorseeConfig::load(paths::config_path(root)) {
         Ok(_) => "config: ok\n".into(),
+        Err(gorsee_code_config::config::ConfigError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            "config: default\n".into()
+        }
         Err(error) => format!("config: error {error}\n"),
     }
 }

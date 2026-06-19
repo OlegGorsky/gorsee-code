@@ -26,7 +26,7 @@ pub fn default_config(project_name: impl Into<String>) -> GorseeConfig {
             protected_paths: Vec::new(),
         },
         neurogate: NeuroGateConfig {
-            endpoint: "https://api.neurogate.example/v1".into(),
+            endpoint: "https://api.neurogate.space/v1".into(),
             auth_source: AuthSource::Env,
         },
         budget: BudgetConfig {
@@ -52,5 +52,11 @@ mod tests {
         let config = default_config("workspace");
         assert!(config.agents.contains_key("architect"));
         assert!(config.agents.contains_key("coder"));
+    }
+
+    #[test]
+    fn default_config_uses_neurogate_api() {
+        let config = default_config("workspace");
+        assert_eq!(config.neurogate.endpoint, "https://api.neurogate.space/v1");
     }
 }
