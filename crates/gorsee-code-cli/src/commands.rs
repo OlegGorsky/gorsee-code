@@ -94,7 +94,8 @@ fn run_auth(root: &Path, command: AuthCommand, env_key: Option<&str>) -> Result<
 
 fn resolve_auth_set_key(api_key: Option<String>, env_key: Option<&str>) -> Result<String> {
     api_key
-        .filter(|key| !key.trim().is_empty())
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
         .or_else(|| {
             env_key
                 .map(str::trim)

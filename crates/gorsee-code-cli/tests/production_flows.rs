@@ -149,13 +149,27 @@ fn reset_yes_removes_project_data() {
 #[test]
 fn approval_commands_list_pending_items_without_auth() {
     let temp = tempfile::tempdir().unwrap();
-    let session_id = "2026-06-19T00-00-00_approval-test";
-    let session = create_session(temp.path(), session_id, "waiting_approval");
-    write_pending_approval(&session, session_id, "appr_0001");
+    let old_id = "z-old-approval-test";
+    let old = create_session_at(
+        temp.path(),
+        old_id,
+        "waiting_approval",
+        "2026-06-19T00:00:00Z",
+    );
+    write_pending_approval(&old, old_id, "appr_old");
+    let new_id = "a-new-approval-test";
+    let new = create_session_at(
+        temp.path(),
+        new_id,
+        "waiting_approval",
+        "2026-06-19T01:00:00Z",
+    );
+    write_pending_approval(&new, new_id, "appr_new");
 
     let list = run_with_options(["gcode", "approvals"], CliOptions::for_root(temp.path())).unwrap();
     assert!(list.contains("approvals: pending"));
-    assert!(list.contains("appr_0001"));
+    assert!(list.contains("appr_new"));
+    assert!(!list.contains("appr_old"));
     assert!(list.contains("propose_patch"));
     assert!(list.contains("risk=write"));
     assert_product_output(&list);
@@ -204,6 +218,10 @@ fn approve_does_not_execute_write_tool_without_saved_execution() {
 }
 
 fn create_session(root: &Path, id: &str, status: &str) -> PathBuf {
+    create_session_at(root, id, status, "2026-06-19T00:00:00Z")
+}
+
+fn create_session_at(root: &Path, id: &str, status: &str, started_at: &str) -> PathBuf {
     let session = root.join(".gorsee-code").join("sessions").join(id);
     fs::create_dir_all(session.join("artifacts")).unwrap();
     fs::create_dir_all(session.join("patches")).unwrap();
@@ -214,7 +232,7 @@ fn create_session(root: &Path, id: &str, status: &str) -> PathBuf {
             "id": id,
             "repo": root.display().to_string(),
             "branch": "main",
-            "started_at": "2026-06-19T00:00:00Z",
+            "started_at": started_at,
             "status": status,
             "agents": ["architect", "scout", "coder", "validator"],
             "budget": { "tokens_limit": 80000, "tokens_used": 0 }

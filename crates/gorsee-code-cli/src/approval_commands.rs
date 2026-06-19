@@ -6,7 +6,7 @@ use gorsee_code_safety::{Redactor, RiskClass};
 use gorsee_code_session::{ApprovalDecision, ApprovalRecord, SessionStore};
 
 use crate::{
-    commands_extra::{require_live_client, session_ids},
+    commands_extra::{require_live_client, session_ids_by_started_at},
     paths,
 };
 
@@ -139,9 +139,7 @@ fn waiting_output(
 }
 
 fn sorted_sessions(root: &Path) -> Result<Vec<String>> {
-    let mut ids = session_ids(root)?;
-    ids.sort();
-    Ok(ids)
+    session_ids_by_started_at(root)
 }
 
 fn command_label(decision: ApprovalDecision) -> &'static str {

@@ -162,10 +162,22 @@ pub fn resolve_session_id(root: &Path, requested: Option<String>) -> Result<Stri
     if let Some(id) = requested {
         return Ok(id);
     }
-    session_ids(root)?
-        .into_iter()
-        .max()
-        .ok_or_else(|| anyhow!("no sessions found"))
+    latest_session_id(root)?.ok_or_else(|| anyhow!("no sessions found"))
+}
+
+pub fn latest_session_id(root: &Path) -> Result<Option<String>> {
+    Ok(session_ids_by_started_at(root)?.pop())
+}
+
+pub fn session_ids_by_started_at(root: &Path) -> Result<Vec<String>> {
+    let mut sessions = Vec::new();
+    for id in session_ids(root)? {
+        let manifest =
+            read_manifest(root, &id).with_context(|| format!("read session {id} manifest"))?;
+        sessions.push((manifest.started_at, id));
+    }
+    sessions.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    Ok(sessions.into_iter().map(|(_, id)| id).collect())
 }
 
 pub fn session_ids(root: &Path) -> Result<Vec<String>> {

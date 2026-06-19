@@ -64,6 +64,23 @@ fn auth_set_reads_env_key_when_argument_is_missing() {
 }
 
 #[test]
+fn auth_set_trims_argument_before_saving() {
+    let temp = tempfile::tempdir().unwrap();
+
+    run_with_options(
+        ["gcode", "auth", "set", " ng_sk_trimmed_123456 "],
+        CliOptions::for_root(temp.path()),
+    )
+    .unwrap();
+    let auth: Value = serde_json::from_str(
+        &fs::read_to_string(temp.path().join(".gorsee-code").join("auth.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(auth["api_key"], "ng_sk_trimmed_123456");
+}
+
+#[test]
 fn doctor_without_key_reports_local_checks_and_skips_live_api() {
     let temp = tempfile::tempdir().unwrap();
     run_with_options(["gcode", "init"], CliOptions::for_root(temp.path())).unwrap();
@@ -116,6 +133,39 @@ fn pause_marks_latest_session_and_appends_event() {
     assert!(output.contains("event: session_paused"));
     assert_eq!(manifest["status"], "paused");
     assert!(events.contains("\"session_paused\""));
+    assert_product_output(&output);
+}
+
+#[test]
+fn resume_uses_newest_started_at_not_lexicographic_id() {
+    let temp = tempfile::tempdir().unwrap();
+    create_session_at(temp.path(), "z-old", "2026-06-19T00:00:00Z", "paused");
+    create_session_at(temp.path(), "a-new", "2026-06-19T01:00:00Z", "paused");
+
+    let output = run_with_options(["gcode", "resume"], CliOptions::for_root(temp.path())).unwrap();
+    let old_manifest = read_manifest(&session_path(temp.path(), "z-old"));
+    let new_manifest = read_manifest(&session_path(temp.path(), "a-new"));
+
+    assert!(output.contains("resume: a-new"));
+    assert_eq!(old_manifest["status"], "paused");
+    assert_eq!(new_manifest["status"], "running");
+    assert_product_output(&output);
+}
+
+#[test]
+fn checkpoint_uses_newest_started_at_not_lexicographic_id() {
+    let temp = tempfile::tempdir().unwrap();
+    create_session_at(temp.path(), "z-old", "2026-06-19T00:00:00Z", "running");
+    create_session_at(temp.path(), "a-new", "2026-06-19T01:00:00Z", "running");
+
+    let output =
+        run_with_options(["gcode", "checkpoint"], CliOptions::for_root(temp.path())).unwrap();
+    let old_manifest = read_manifest(&session_path(temp.path(), "z-old"));
+    let new_manifest = read_manifest(&session_path(temp.path(), "a-new"));
+
+    assert!(output.contains("checkpoint: a-new"));
+    assert_eq!(old_manifest["status"], "running");
+    assert_eq!(new_manifest["status"], "paused");
     assert_product_output(&output);
 }
 
@@ -205,22 +255,31 @@ fn assert_no_sessions(root: &Path) {
 }
 
 fn create_session(root: &Path, id: &str) {
+    create_session_at(root, id, "2026-06-19T00:00:00Z", "running");
+}
+
+fn create_session_at(root: &Path, id: &str, started_at: &str, status: &str) {
     let session = root.join(".gorsee-code").join("sessions").join(id);
     fs::create_dir_all(session.join("artifacts")).unwrap();
+    fs::write(session.join("events.jsonl"), "").unwrap();
     fs::write(
         session.join("manifest.json"),
         serde_json::json!({
             "id": id,
             "repo": root.display().to_string(),
             "branch": "main",
-            "started_at": "2026-06-19T00:00:00Z",
-            "status": "running",
+            "started_at": started_at,
+            "status": status,
             "agents": ["architect", "scout", "coder", "validator"],
             "budget": { "tokens_limit": 80000, "tokens_used": 0 }
         })
         .to_string(),
     )
     .unwrap();
+}
+
+fn session_path(root: &Path, id: &str) -> PathBuf {
+    root.join(".gorsee-code").join("sessions").join(id)
 }
 
 fn read_manifest(session: &Path) -> Value {

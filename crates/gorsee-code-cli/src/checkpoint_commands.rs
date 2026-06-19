@@ -10,12 +10,12 @@ use gorsee_code_safety::Redactor;
 use gorsee_code_session::{SessionManifest, SessionStore};
 use serde_json::json;
 
-use crate::{commands_extra::session_ids, paths};
+use crate::{commands_extra::latest_session_id, paths};
 
 pub fn save(root: &Path) -> Result<String> {
     paths::ensure_layout(root)?;
     let store = SessionStore::new(paths::local_dir(root), Redactor::default());
-    let id = match session_ids(root)?.into_iter().max() {
+    let id = match latest_session_id(root)? {
         Some(id) => id,
         None => create_session(root, &store)?,
     };
