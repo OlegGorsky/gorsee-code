@@ -194,10 +194,10 @@ impl WorkspaceApp {
             | CenterPanel::Project
             | CenterPanel::Skills
             | CenterPanel::Mcp
-            | CenterPanel::Limits => {
-                if self.selected_panel_item + 1 < self.panel_items.len() {
-                    self.selected_panel_item += 1;
-                }
+            | CenterPanel::Limits
+                if self.selected_panel_item + 1 < self.panel_items.len() =>
+            {
+                self.selected_panel_item += 1;
             }
             _ => {}
         }
