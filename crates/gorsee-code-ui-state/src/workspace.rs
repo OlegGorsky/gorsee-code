@@ -16,7 +16,7 @@ use crate::{
 
 pub fn workspace_state(root: impl AsRef<Path>) -> WorkspaceState {
     let root = root.as_ref();
-    if let Some((manifest, events, approvals)) = latest_session(root) {
+    if let Some((manifest, events, approvals)) = active_session(root) {
         return session_state(root, manifest, events, approvals);
     }
     ready_state(root)
@@ -81,14 +81,6 @@ fn session_state(
     }
 }
 
-fn latest_session(root: &Path) -> Option<(SessionManifest, Vec<Event>, Vec<ApprovalRecord>)> {
-    let dir = latest_session_dir(root)?;
-    let manifest = read_manifest(&dir)?;
-    let events = read_events(&dir);
-    let approvals = read_approvals(&dir);
-    Some((manifest, events, approvals))
-}
-
 fn requested_session(
     root: &Path,
     session_id: &str,
@@ -100,7 +92,15 @@ fn requested_session(
     Some((manifest, events, approvals))
 }
 
-fn latest_session_dir(root: &Path) -> Option<PathBuf> {
+fn active_session(root: &Path) -> Option<(SessionManifest, Vec<Event>, Vec<ApprovalRecord>)> {
+    let dir = active_session_dir(root)?;
+    let manifest = read_manifest(&dir)?;
+    let events = read_events(&dir);
+    let approvals = read_approvals(&dir);
+    Some((manifest, events, approvals))
+}
+
+fn active_session_dir(root: &Path) -> Option<PathBuf> {
     let entries = fs::read_dir(root.join(".gorsee-code").join("sessions")).ok()?;
     entries
         .filter_map(|entry| entry.ok())
@@ -108,24 +108,20 @@ fn latest_session_dir(root: &Path) -> Option<PathBuf> {
         .filter_map(|entry| {
             let path = entry.path();
             let manifest = read_manifest(&path)?;
-            Some((path, manifest))
+            is_active_session(&manifest.status).then_some((path, manifest))
         })
         .max_by(|left, right| compare_sessions(&left.1, &right.1))
         .map(|(path, _)| path)
 }
 
 fn compare_sessions(left: &SessionManifest, right: &SessionManifest) -> Ordering {
-    active_rank(&left.status)
-        .cmp(&active_rank(&right.status))
-        .then_with(|| left.started_at.cmp(&right.started_at))
+    left.started_at
+        .cmp(&right.started_at)
         .then_with(|| left.id.cmp(&right.id))
 }
 
-fn active_rank(status: &str) -> u8 {
-    match status {
-        "running" | "waiting_approval" | "paused" => 1,
-        _ => 0,
-    }
+fn is_active_session(status: &str) -> bool {
+    matches!(status, "running" | "waiting_approval" | "paused")
 }
 
 fn read_manifest(session_dir: &Path) -> Option<SessionManifest> {

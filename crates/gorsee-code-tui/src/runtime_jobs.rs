@@ -101,6 +101,13 @@ pub(crate) fn finish_worker_blocking(
 pub(crate) fn finish_joined(job: Worker, app: &mut WorkspaceApp) {
     match job.join() {
         Ok(Ok(output)) => {
+            if let Some(session_id) = completed_session_id(&output) {
+                app.active_session_id = Some(session_id.clone());
+                app.center_panel = crate::CenterPanel::Timeline;
+                app.clear_output();
+                app.set_status(format!("сессия завершена: {session_id}"));
+                return;
+            }
             app.set_status(compact_status(&output));
             if output.trim().is_empty() {
                 app.clear_output();
@@ -160,4 +167,13 @@ fn compact_status(output: &str) -> String {
         .find(|line| !line.trim().is_empty())
         .map(|line| line.trim().to_string())
         .unwrap_or_else(|| "complete".into())
+}
+
+fn completed_session_id(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        line.strip_prefix("run: completed session=")
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(ToOwned::to_owned)
+    })
 }

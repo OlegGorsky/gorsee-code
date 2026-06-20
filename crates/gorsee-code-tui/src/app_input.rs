@@ -149,7 +149,13 @@ impl WorkspaceApp {
             && self.focus == FocusPane::Menu
             && matches!(
                 self.center_panel,
-                CenterPanel::Sessions | CenterPanel::Models
+                CenterPanel::Sessions
+                    | CenterPanel::Models
+                    | CenterPanel::Project
+                    | CenterPanel::Instructions
+                    | CenterPanel::Skills
+                    | CenterPanel::Mcp
+                    | CenterPanel::Limits
             )
     }
 
@@ -160,6 +166,13 @@ impl WorkspaceApp {
             }
             CenterPanel::Models => {
                 self.selected_model = self.selected_model.saturating_sub(1);
+            }
+            CenterPanel::Instructions
+            | CenterPanel::Project
+            | CenterPanel::Skills
+            | CenterPanel::Mcp
+            | CenterPanel::Limits => {
+                self.selected_panel_item = self.selected_panel_item.saturating_sub(1);
             }
             _ => {}
         }
@@ -175,6 +188,15 @@ impl WorkspaceApp {
             CenterPanel::Models => {
                 if self.selected_model + 1 < self.models.len() {
                     self.selected_model += 1;
+                }
+            }
+            CenterPanel::Instructions
+            | CenterPanel::Project
+            | CenterPanel::Skills
+            | CenterPanel::Mcp
+            | CenterPanel::Limits => {
+                if self.selected_panel_item + 1 < self.panel_items.len() {
+                    self.selected_panel_item += 1;
                 }
             }
             _ => {}

@@ -7,6 +7,7 @@ pub enum FocusPane {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuPanel {
+    Project,
     Timeline,
     Diff,
     Sessions,
@@ -25,6 +26,11 @@ pub struct MenuItem {
 }
 
 pub const MENU_ITEMS: &[MenuItem] = &[
+    MenuItem {
+        label: "Проект",
+        icon: "",
+        panel: MenuPanel::Project,
+    },
     MenuItem {
         label: "Лента",
         icon: "",

@@ -13,6 +13,18 @@ fn empty_workspace_is_ready() {
 }
 
 #[test]
+fn default_workspace_state_does_not_auto_open_latest_session() {
+    let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "latest", "2026-06-20T01:00:00Z", "finished");
+
+    let state = workspace_state(temp.path());
+
+    assert_eq!(state.session.id, "workspace");
+    assert_eq!(state.session.status, "ready");
+    assert_eq!(state.timeline[0].kind, "workspace_ready");
+}
+
+#[test]
 fn workspace_state_can_load_requested_session() {
     let temp = tempfile::tempdir().unwrap();
     write_session(temp.path(), "older", "2026-06-20T00:00:00Z", "finished");

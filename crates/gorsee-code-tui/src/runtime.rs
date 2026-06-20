@@ -123,6 +123,7 @@ fn run_scripted_loop(
     load_state: &impl Fn(&Path, Option<&str>) -> WorkspaceState,
     initial_root: &Path,
 ) -> Result<()> {
+    sync_project_root(app, initial_root);
     draw_app(stdout, &load_state(initial_root, None), app)?;
     let stdin = io::stdin();
     let mut stdin = stdin.lock();

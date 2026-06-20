@@ -61,7 +61,7 @@ fn gcode_accepts_workspace_commands_after_key_prompt() {
     assert!(output.status.success());
     assert!(stdout.contains("NeuroGate API key:"));
     assert!(stdout.contains("Введите задачу"));
-    assert!(stdout.contains("Вывод"));
+    assert!(stdout.contains("Результат команды"));
     assert!(stdout.contains("agents:"));
     assert_product_output(&stdout);
 }

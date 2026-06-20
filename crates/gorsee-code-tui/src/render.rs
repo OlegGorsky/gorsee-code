@@ -17,7 +17,7 @@ pub fn render_app(state: &WorkspaceState, app: &WorkspaceApp) -> String {
     }
     if let Some(output) = app.output() {
         out.push('\n');
-        out.push_str("Вывод\n");
+        out.push_str("Результат команды\n");
         out.push_str(output);
         if !output.ends_with('\n') {
             out.push('\n');

@@ -10,7 +10,7 @@ use gorsee_code_tui::{
     CenterPanel, CompletionKind, FocusPane, KeyAction, WorkspaceApp,
 };
 use gorsee_code_ui_state::{approval_waiting, workspace_running, ToolCallView};
-use ratatui::{backend::TestBackend, Terminal};
+use ratatui::{backend::TestBackend, style::Color, Terminal};
 
 #[test]
 fn ratatui_render_surfaces_workspace_shell() {
@@ -44,6 +44,7 @@ fn ratatui_sidebar_uses_menu_and_files_without_quick_commands() {
 
     let screen = buffer_text(terminal.backend().buffer());
     for item in [
+        "Проект",
         "Лента",
         "Дифф",
         "Сессии",
@@ -79,8 +80,13 @@ fn tab_switches_arrow_focus_between_files_and_menu() {
         AppIntent::None
     );
     assert_eq!(app.focus_pane(), FocusPane::Menu);
-    assert_eq!(app.selected_menu_label(), "Лента");
+    assert_eq!(app.selected_menu_label(), "Проект");
 
+    assert_eq!(
+        app.handle_action(KeyAction::MoveSelectionDown, &state),
+        AppIntent::None
+    );
+    assert_eq!(app.selected_menu_label(), "Лента");
     assert_eq!(
         app.handle_action(KeyAction::MoveSelectionDown, &state),
         AppIntent::None
@@ -248,6 +254,59 @@ fn render_app_surfaces_live_prompt_and_actions() {
     assert!(output.contains("q выход"));
     assert!(output.contains("Статус: ready"));
     assert_product_output(&output);
+}
+
+#[test]
+fn project_panel_changes_working_folder_from_center() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    assert_eq!(submit_line(&mut app, "/project", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Project);
+    assert_eq!(app.output(), None);
+
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+
+    assert_eq!(
+        app.working_folder().expect("working folder"),
+        project.path().parent().expect("temp parent")
+    );
+}
+
+#[test]
+fn changing_project_clears_active_session_scope() {
+    let project = temp_project();
+    let other = temp_project();
+    write_session(
+        project.path(),
+        "session-a",
+        "2026-06-20T00:00:00Z",
+        "running",
+    );
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    assert_eq!(submit_line(&mut app, "/sessions", &state), AppIntent::None);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+    assert_eq!(app.active_session_id(), Some("session-a"));
+
+    app.choose_working_folder(other.path())
+        .expect("choose other");
+
+    assert_eq!(app.active_session_id(), None);
+    assert!(app.session_items().is_empty());
 }
 
 #[test]
@@ -429,10 +488,10 @@ fn app_offers_slash_commands_and_at_file_mentions() {
     assert!(commands
         .completion_items()
         .iter()
-        .any(|item| item.insert_text() == "/agents"));
+        .any(|item| item.insert_text() == "/project"));
 
     commands.handle_action(KeyAction::AcceptCompletion, &state);
-    assert_eq!(commands.input(), "/agents");
+    assert_eq!(commands.input(), "/project");
 
     let mut files = WorkspaceApp::new();
     files
@@ -496,6 +555,7 @@ fn sessions_panel_selects_active_session_from_keyboard() {
     app.handle_action(KeyAction::FocusNext, &state);
     app.handle_action(KeyAction::MoveSelectionDown, &state);
     app.handle_action(KeyAction::MoveSelectionDown, &state);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
 
     assert_eq!(
         app.handle_action(KeyAction::Submit, &state),
@@ -504,9 +564,14 @@ fn sessions_panel_selects_active_session_from_keyboard() {
     assert_eq!(app.center_panel(), CenterPanel::Sessions);
     assert_eq!(
         app.session_items(),
-        &["session-b".to_string(), "session-a".to_string()]
+        vec![
+            "Новая сессия".to_string(),
+            "session-b".to_string(),
+            "session-a".to_string()
+        ]
     );
 
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
     assert_eq!(
         app.handle_action(KeyAction::Submit, &state),
         AppIntent::None
@@ -535,12 +600,12 @@ fn sessions_panel_selects_active_session_from_mouse() {
 
     app.sync_project_root(project.path()).expect("scan project");
     assert_eq!(
-        app.handle_mouse(left_click(4, 4), area, &state),
+        app.handle_mouse(left_click(4, 5), area, &state),
         AppIntent::None
     );
     assert_eq!(app.center_panel(), CenterPanel::Sessions);
     assert_eq!(
-        app.handle_mouse(left_click(35, 4), area, &state),
+        app.handle_mouse(left_click(35, 5), area, &state),
         AppIntent::None
     );
     assert_eq!(app.active_session_id(), Some("session-b"));
@@ -552,6 +617,7 @@ fn models_panel_changes_model_choice_and_emits_set_command() {
     let mut app = WorkspaceApp::new();
 
     app.handle_action(KeyAction::FocusNext, &state);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
     app.handle_action(KeyAction::MoveSelectionDown, &state);
     app.handle_action(KeyAction::MoveSelectionDown, &state);
     app.handle_action(KeyAction::MoveSelectionDown, &state);
@@ -669,7 +735,7 @@ fn mouse_uses_compact_sidebar_project_rows_and_completion_rows() {
         .any(|entry| entry.path() == Path::new("src/main.rs")));
 
     assert_eq!(
-        app.handle_mouse(left_click(3, 12), area, &state),
+        app.handle_mouse(left_click(3, 15), area, &state),
         AppIntent::None
     );
     assert!(
@@ -694,16 +760,17 @@ fn mouse_sidebar_menu_items_are_actionable() {
     let mut app = WorkspaceApp::new();
 
     assert_eq!(
-        app.handle_mouse(left_click(4, 3), area, &state),
+        app.handle_mouse(left_click(4, 4), area, &state),
         AppIntent::Command("diff".into())
     );
     assert_eq!(app.center_panel(), CenterPanel::Diff);
 
     assert_eq!(
-        app.handle_mouse(left_click(4, 2), area, &state),
+        app.handle_mouse(left_click(4, 3), area, &state),
         AppIntent::None
     );
-    assert!(app.output().unwrap().contains("timeline:"));
+    assert_eq!(app.center_panel(), CenterPanel::Timeline);
+    assert_eq!(app.output(), None);
 }
 
 #[test]
@@ -829,6 +896,32 @@ fn mouse_drag_selection_copies_center_text() {
         }
         other => panic!("expected copy intent, got {other:?}"),
     }
+}
+
+#[test]
+fn mouse_drag_selection_renders_visible_highlight() {
+    let state = workspace_running();
+    let area = ratatui::layout::Rect::new(0, 0, 140, 42);
+    let mut app = WorkspaceApp::new();
+
+    assert_eq!(
+        app.handle_mouse(left_click(35, 5), area, &state),
+        AppIntent::None
+    );
+    assert_eq!(
+        app.handle_mouse(left_drag(80, 7), area, &state),
+        AppIntent::None
+    );
+
+    let mut terminal = Terminal::new(TestBackend::new(140, 42)).expect("terminal");
+    terminal
+        .draw(|frame| render_frame(frame, &state, &app))
+        .expect("render");
+
+    assert!(buffer_has_bg(
+        terminal.backend().buffer(),
+        Color::Rgb(76, 60, 180)
+    ));
 }
 
 #[test]
@@ -969,7 +1062,8 @@ fn app_turns_input_and_workspace_hotkeys_into_intents() {
         AppIntent::Submit("fi".into())
     );
     assert_eq!(app.input(), "");
-    assert!(app.output().unwrap().contains("fi"));
+    assert_eq!(app.output(), None);
+    assert_eq!(app.status(), Some("running"));
     assert_eq!(
         app.handle_action(KeyAction::Approve, &state),
         AppIntent::Approve("tool-1".into())
@@ -1024,7 +1118,7 @@ fn app_displays_workspace_command_output_inline() {
 
     assert_eq!(submit_line(&mut app, "/agents", &state), AppIntent::None);
 
-    assert_eq!(app.status(), Some("ready"));
+    assert_eq!(app.status(), Some("результат команды"));
     assert!(app.output().unwrap().contains("agents:"));
 }
 
@@ -1037,7 +1131,6 @@ fn app_keeps_workspace_overview_commands_inline() {
         ("/usage", "budget:"),
         ("/route", "route:"),
         ("/context", "context:"),
-        ("/timeline", "timeline:"),
         ("/approvals", "approvals:"),
     ] {
         let mut app = WorkspaceApp::new();
@@ -1045,10 +1138,18 @@ fn app_keeps_workspace_overview_commands_inline() {
         assert_eq!(submit_line(&mut app, input, &state), AppIntent::None);
 
         let output = app.output().unwrap();
-        assert_eq!(app.status(), Some("ready"));
+        assert_eq!(app.status(), Some("результат команды"));
         assert!(output.contains(expected));
         assert_product_output(output);
     }
+
+    let mut timeline = WorkspaceApp::new();
+    assert_eq!(
+        submit_line(&mut timeline, "/timeline", &state),
+        AppIntent::None
+    );
+    assert_eq!(timeline.center_panel(), CenterPanel::Timeline);
+    assert_eq!(timeline.output(), None);
 }
 
 #[test]
@@ -1059,11 +1160,6 @@ fn app_routes_external_commands_to_cli_handler() {
         ("/capabilities", "capabilities"),
         ("/doctor", "doctor"),
         ("/hooks", "hooks"),
-        ("/instructions", "instructions"),
-        ("/models", "models"),
-        ("/mcp", "mcp"),
-        ("/sessions", "sessions"),
-        ("/skills", "skills"),
         ("/skills show review", "skills show review"),
     ] {
         let mut app = WorkspaceApp::new();
@@ -1076,6 +1172,104 @@ fn app_routes_external_commands_to_cli_handler() {
         assert_eq!(app.status(), Some("working"));
         assert_eq!(app.output(), None);
     }
+}
+
+#[test]
+fn app_opens_project_setting_panels_without_chat_output() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+    app.sync_project_root(project.path()).expect("scan project");
+
+    assert_eq!(submit_line(&mut app, "/project", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Project);
+    assert_eq!(app.output(), None);
+
+    assert_eq!(
+        submit_line(&mut app, "/instructions", &state),
+        AppIntent::None
+    );
+    assert_eq!(app.center_panel(), CenterPanel::Instructions);
+    assert_eq!(app.output(), None);
+
+    assert_eq!(submit_line(&mut app, "/skills", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Skills);
+    assert_eq!(app.output(), None);
+
+    assert_eq!(submit_line(&mut app, "/mcp", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Mcp);
+    assert_eq!(app.output(), None);
+
+    assert_eq!(submit_line(&mut app, "/limits", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Limits);
+    assert_eq!(app.output(), None);
+
+    assert_eq!(submit_line(&mut app, "/sessions", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Sessions);
+    assert_eq!(app.output(), None);
+
+    assert_eq!(submit_line(&mut app, "/models", &state), AppIntent::None);
+    assert_eq!(app.center_panel(), CenterPanel::Models);
+    assert_eq!(app.output(), None);
+}
+
+#[test]
+fn project_setting_panels_open_editable_files() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+    app.sync_project_root(project.path()).expect("scan project");
+
+    assert_eq!(
+        submit_line(&mut app, "/instructions", &state),
+        AppIntent::None
+    );
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+    assert_eq!(app.editor().unwrap().path(), Path::new("AGENTS.md"));
+    assert!(project.path().join("AGENTS.md").exists());
+    assert_eq!(
+        app.handle_action(KeyAction::CloseEditor, &state),
+        AppIntent::None
+    );
+
+    assert_eq!(submit_line(&mut app, "/skills", &state), AppIntent::None);
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+    assert_eq!(
+        app.editor().unwrap().path(),
+        Path::new(".gorsee-code/skills/repo-audit.md")
+    );
+    assert!(project
+        .path()
+        .join(".gorsee-code/skills/repo-audit.md")
+        .exists());
+}
+
+#[test]
+fn opening_setting_panel_resets_item_selection() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    assert_eq!(submit_line(&mut app, "/project", &state), AppIntent::None);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
+
+    assert_eq!(
+        submit_line(&mut app, "/instructions", &state),
+        AppIntent::None
+    );
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+    assert_eq!(app.editor().unwrap().path(), Path::new("AGENTS.md"));
 }
 
 #[test]
@@ -1191,6 +1385,10 @@ fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
         output.push('\n');
     }
     output
+}
+
+fn buffer_has_bg(buffer: &ratatui::buffer::Buffer, bg: Color) -> bool {
+    buffer.content().iter().any(|cell| cell.bg == bg)
 }
 
 fn submit_line(

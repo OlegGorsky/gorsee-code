@@ -19,6 +19,20 @@ fn failed_worker_sets_visible_output() {
 }
 
 #[test]
+fn completed_submit_selects_created_session_without_fake_output() {
+    let job = thread::spawn(|| -> Result<String> {
+        Ok("run: completed session=session-123\nevents=4\nagents=architect".into())
+    });
+    let mut app = WorkspaceApp::new();
+
+    finish_joined(job, &mut app);
+
+    assert_eq!(app.active_session_id(), Some("session-123"));
+    assert_eq!(app.output(), None);
+    assert_eq!(app.status(), Some("сессия завершена: session-123"));
+}
+
+#[test]
 fn command_handler_uses_selected_working_folder() {
     let temp = tempfile::tempdir().unwrap();
     let child = temp.path().join("child");

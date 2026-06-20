@@ -8,7 +8,9 @@ use crate::{
     editor::EditorBuffer,
     model_picker::ModelChoice,
     navigation::{FocusPane, MENU_ITEMS},
+    panel_items::PanelItem,
     project::ProjectTree,
+    session_picker::SessionItem,
     KeyAction,
 };
 
@@ -26,12 +28,16 @@ pub struct WorkspaceApp {
     pub(crate) focus: FocusPane,
     pub(crate) selected_menu: usize,
     pub(crate) spinner_tick: u64,
-    pub(crate) sessions: Vec<String>,
+    pub(crate) sessions: Vec<SessionItem>,
     pub(crate) selected_session: usize,
     pub(crate) active_session_id: Option<String>,
     pub(crate) models: Vec<ModelChoice>,
     pub(crate) selected_model: usize,
+    pub(crate) panel_items: Vec<PanelItem>,
+    pub(crate) selected_panel_item: usize,
     pub(crate) selection_anchor: Option<(u16, u16)>,
+    pub(crate) selection_cursor: Option<(u16, u16)>,
+    pub(crate) selection_range: Option<((u16, u16), (u16, u16))>,
     pub(crate) center_scroll: usize,
     pub(crate) confirm_close_editor: bool,
     pub(crate) pending_restore_input: Option<String>,
@@ -81,8 +87,11 @@ impl WorkspaceApp {
         self.spinner_tick
     }
 
-    pub fn session_items(&self) -> &[String] {
-        &self.sessions
+    pub fn session_items(&self) -> Vec<String> {
+        self.sessions
+            .iter()
+            .map(|item| item.label().to_string())
+            .collect()
     }
 
     pub fn active_session_id(&self) -> Option<&str> {
@@ -95,6 +104,14 @@ impl WorkspaceApp {
 
     pub fn model_selected_model(&self) -> Option<&str> {
         self.models.get(self.selected_model).map(ModelChoice::model)
+    }
+
+    pub(crate) fn panel_items(&self) -> &[PanelItem] {
+        &self.panel_items
+    }
+
+    pub(crate) fn selected_panel_item(&self) -> usize {
+        self.selected_panel_item
     }
 
     pub fn advance_spinner(&mut self) {
@@ -135,6 +152,11 @@ impl WorkspaceApp {
     pub fn clear_output(&mut self) {
         self.output = None;
         self.center_scroll = 0;
+    }
+
+    pub(crate) fn set_panel_items(&mut self, items: Vec<PanelItem>) {
+        self.panel_items = items;
+        self.selected_panel_item = 0;
     }
 
     pub fn handle_action(&mut self, action: KeyAction, state: &WorkspaceState) -> AppIntent {
@@ -204,6 +226,11 @@ impl WorkspaceApp {
 
     pub fn center_scroll(&self) -> usize {
         self.center_scroll
+    }
+
+    pub(crate) fn center_selection_range(&self) -> Option<((u16, u16), (u16, u16))> {
+        self.selection_range
+            .or_else(|| Some((self.selection_anchor?, self.selection_cursor?)))
     }
 
     pub(crate) fn completion_visible_start(&self) -> usize {

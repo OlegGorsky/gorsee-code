@@ -13,11 +13,12 @@ use crate::{
     project::path_label,
     screen_footer::render_footer,
     screen_metrics::{agent_lines, limit_lines},
-    screen_panels::{render_models_panel, render_sessions_panel},
+    screen_panels::{render_item_panel, render_models_panel, render_sessions_panel},
     screen_parts::{
         attachment_lines, completion_lines, editor_lines, input_lines, panel, panel_block,
         project_lines, push_event, status_label, status_style,
     },
+    screen_selection::apply_center_selection,
     theme, CenterPanel, WorkspaceApp,
 };
 
@@ -43,11 +44,16 @@ fn render_sidebar(frame: &mut Frame<'_>, area: Rect, state: &WorkspaceState, app
         menu_line(item.icon, item.label, selected)
     }));
     lines.push(Line::raw(""));
-    lines.push(Line::from(vec![Span::styled("ФАЙЛЫ ─", theme::accent())]));
+    lines.push(Line::from(vec![Span::styled("ПРОЕКТ ─", theme::accent())]));
     lines.push(Line::from(vec![
         Span::styled("   ", theme::cyan()),
         Span::raw(folder_name(app, state)),
     ]));
+    lines.push(Line::from(vec![Span::styled(
+        "  /project <путь>",
+        theme::dim(),
+    )]));
+    lines.push(Line::from(vec![Span::styled("ФАЙЛЫ ─", theme::accent())]));
     lines.extend(project_lines(app));
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
@@ -68,7 +74,17 @@ fn render_center(frame: &mut Frame<'_>, area: Rect, state: &WorkspaceState, app:
         render_sessions_panel(frame, area, app);
     } else if app.center_panel() == CenterPanel::Models && app.output().is_none() {
         render_models_panel(frame, area, app);
-    } else if app.output().is_some() && app.center_panel() != CenterPanel::Timeline {
+    } else if matches!(
+        app.center_panel(),
+        CenterPanel::Project
+            | CenterPanel::Instructions
+            | CenterPanel::Skills
+            | CenterPanel::Mcp
+            | CenterPanel::Limits
+    ) && app.output().is_none()
+    {
+        render_item_panel(frame, area, app);
+    } else if app.output().is_some() {
         render_output_panel(frame, area, app);
     } else {
         render_timeline(frame, area, state, app);
@@ -98,17 +114,7 @@ fn render_timeline(frame: &mut Frame<'_>, area: Rect, state: &WorkspaceState, ap
         push_event(&mut lines, event);
     }
 
-    if let Some(output) = app.output() {
-        lines.push(Line::raw(""));
-        lines.push(Line::from(vec![Span::styled("Вывод", theme::accent())]));
-        lines.extend(
-            output
-                .lines()
-                .take(8)
-                .map(|line| Line::raw(format!("  {line}"))),
-        );
-    }
-
+    let lines = apply_center_selection(lines, area, app);
     frame.render_widget(panel(lines, " Лента "), area);
 }
 
@@ -134,6 +140,7 @@ fn render_editor(frame: &mut Frame<'_>, area: Rect, app: &WorkspaceApp) {
         editor.cursor(),
         editor.scroll(),
     ));
+    let lines = apply_center_selection(lines, area, app);
     frame.render_widget(
         Paragraph::new(lines)
             .block(panel_block(title))
@@ -146,6 +153,7 @@ fn render_editor(frame: &mut Frame<'_>, area: Rect, app: &WorkspaceApp) {
 fn render_output_panel(frame: &mut Frame<'_>, area: Rect, app: &WorkspaceApp) {
     let title = match app.center_panel() {
         CenterPanel::Diff => " Diff ",
+        CenterPanel::Project => " Проект ",
         CenterPanel::Sessions => " Сессии ",
         CenterPanel::Models => " Модели ",
         CenterPanel::Instructions => " Инструкции ",
@@ -153,7 +161,7 @@ fn render_output_panel(frame: &mut Frame<'_>, area: Rect, app: &WorkspaceApp) {
         CenterPanel::Mcp => " MCP ",
         CenterPanel::Limits => " Лимиты ",
         CenterPanel::Terminal => " Терминал ",
-        CenterPanel::Timeline => " Вывод ",
+        CenterPanel::Timeline => " Результат ",
     };
     let lines = app
         .output()
@@ -174,6 +182,7 @@ fn render_output_panel(frame: &mut Frame<'_>, area: Rect, app: &WorkspaceApp) {
             Line::from(vec![Span::styled(line.to_string(), style)])
         })
         .collect::<Vec<_>>();
+    let lines = apply_center_selection(lines, area, app);
     frame.render_widget(panel(lines, title), area);
 }
 

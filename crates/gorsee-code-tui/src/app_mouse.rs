@@ -1,10 +1,11 @@
 use std::path::Path;
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-use gorsee_code_ui_state::{EventView, WorkspaceState};
+use gorsee_code_ui_state::WorkspaceState;
 use ratatui::layout::Rect;
 
 use crate::{
+    center_copy::{mouse_point, selected_center_text},
     center_panel::CenterPanel,
     layout::screen_layout,
     navigation::MENU_ITEMS,
@@ -43,12 +44,24 @@ impl WorkspaceApp {
                 }
                 if contains(layout.center, mouse.column, mouse.row) {
                     self.selection_anchor = Some((mouse.column, mouse.row));
+                    self.selection_cursor = Some((mouse.column, mouse.row));
+                    self.selection_range = None;
+                } else {
+                    self.selection_anchor = None;
+                    self.selection_cursor = None;
+                    self.selection_range = None;
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 return self.handle_drag_copy(mouse, layout.center, state);
             }
-            MouseEventKind::Drag(MouseButton::Left) => {}
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if self.selection_anchor.is_some()
+                    && contains(layout.center, mouse.column, mouse.row)
+                {
+                    self.selection_cursor = Some((mouse.column, mouse.row));
+                }
+            }
             _ => return AppIntent::None,
         }
         if contains(layout.left, mouse.column, mouse.row) {
@@ -102,23 +115,22 @@ impl WorkspaceApp {
         };
         if !contains(center, mouse.column, mouse.row) {
             self.selection_anchor = None;
+            self.selection_cursor = None;
+            self.selection_range = None;
             return AppIntent::None;
         }
-        let text = selected_center_text(
-            &copyable_center_lines(state, self),
-            center,
-            self.center_scroll(),
-            start_column,
-            start_row,
-            mouse.column,
-            mouse.row,
-        );
+        let end = self.selection_cursor.unwrap_or_else(|| mouse_point(mouse));
+        self.selection_range = Some(((start_column, start_row), end));
+        let text = selected_center_text(state, self, center, end);
         if text.trim().is_empty() {
             self.selection_anchor = None;
+            self.selection_cursor = None;
+            self.selection_range = None;
             return AppIntent::None;
         }
         self.set_status("Скопировано!");
         self.selection_anchor = None;
+        self.selection_cursor = None;
         AppIntent::Copy(text)
     }
 
@@ -139,6 +151,19 @@ impl WorkspaceApp {
                 self.selected_model = index;
                 self.activate_center_selection()
             }
+            CenterPanel::Project if index < self.panel_items.len() => {
+                self.selected_panel_item = index;
+                self.activate_center_selection()
+            }
+            CenterPanel::Instructions
+            | CenterPanel::Skills
+            | CenterPanel::Mcp
+            | CenterPanel::Limits
+                if index < self.panel_items.len() =>
+            {
+                self.selected_panel_item = index;
+                self.activate_center_selection()
+            }
             _ => None,
         }
     }
@@ -156,6 +181,7 @@ impl WorkspaceApp {
         if content_row == 0 || usize::from(content_row) > MENU_ITEMS.len() {
             return None;
         }
+        self.focus = crate::navigation::FocusPane::Menu;
         self.selected_menu = usize::from(content_row - 1);
         Some(self.activate_menu(state))
     }
@@ -209,87 +235,5 @@ impl WorkspaceApp {
 }
 
 fn project_entry_line() -> u16 {
-    11
-}
-
-fn copyable_center_lines(state: &WorkspaceState, app: &WorkspaceApp) -> Vec<String> {
-    if let Some(editor) = app.editor() {
-        return editor.text().lines().map(ToOwned::to_owned).collect();
-    }
-    if app.output().is_some() && app.center_panel() != CenterPanel::Timeline {
-        return app
-            .output()
-            .unwrap_or_default()
-            .lines()
-            .map(ToOwned::to_owned)
-            .collect();
-    }
-    let mut lines = vec![
-        format!("Gorsee Code - Лента {}", state.session.id),
-        String::new(),
-    ];
-    for event in &state.timeline {
-        lines.push(event_title_line(event));
-        lines.push(event_summary_line(event));
-    }
-    if let Some(output) = app.output() {
-        lines.extend(output.lines().map(ToOwned::to_owned));
-    }
-    lines
-}
-
-fn event_title_line(event: &EventView) -> String {
-    let agent = event.agent_id.as_deref().unwrap_or("workspace");
-    format!("#{:04} {} {}", event.sequence, event.kind, agent)
-}
-
-fn event_summary_line(event: &EventView) -> String {
-    format!("       │ {}", event.summary)
-}
-
-fn selected_center_text(
-    lines: &[String],
-    center: Rect,
-    scroll: usize,
-    start_column: u16,
-    start_row: u16,
-    end_column: u16,
-    end_row: u16,
-) -> String {
-    let start = scroll + row_index(center, start_row).min(row_index(center, end_row));
-    let end = scroll + row_index(center, start_row).max(row_index(center, end_row));
-    let left = column_index(center, start_column).min(column_index(center, end_column));
-    let right = column_index(center, start_column).max(column_index(center, end_column));
-    let mut selected = lines
-        .iter()
-        .skip(start)
-        .take(end.saturating_sub(start) + 1)
-        .map(|line| slice_columns(line, left, right))
-        .collect::<Vec<_>>()
-        .join("\n");
-    if selected.ends_with('\n') {
-        selected.pop();
-    }
-    selected
-}
-
-fn row_index(area: Rect, row: u16) -> usize {
-    row.saturating_sub(area.y + 1) as usize
-}
-
-fn column_index(area: Rect, column: u16) -> usize {
-    column.saturating_sub(area.x + 1) as usize
-}
-
-fn slice_columns(line: &str, left: usize, right: usize) -> String {
-    let start = byte_index_for_column(line, left);
-    let end = byte_index_for_column(line, right.saturating_add(1));
-    line[start..end].to_string()
-}
-
-fn byte_index_for_column(line: &str, column: usize) -> usize {
-    line.char_indices()
-        .nth(column)
-        .map(|(index, _)| index)
-        .unwrap_or(line.len())
+    14
 }

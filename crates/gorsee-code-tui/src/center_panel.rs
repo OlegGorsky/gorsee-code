@@ -2,6 +2,7 @@
 pub enum CenterPanel {
     #[default]
     Timeline,
+    Project,
     Diff,
     Sessions,
     Models,

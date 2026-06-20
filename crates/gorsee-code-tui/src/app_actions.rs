@@ -3,7 +3,6 @@ use gorsee_code_ui_state::WorkspaceState;
 use crate::{
     actions::AppIntent,
     center_panel::CenterPanel,
-    model_picker::choices_from_state,
     navigation::{FocusPane, MenuPanel, MENU_ITEMS},
     parse_command, CommandAction, WorkspaceApp,
 };
@@ -72,10 +71,6 @@ impl WorkspaceApp {
         self.clear_output();
         self.center_panel = CenterPanel::Timeline;
         let objective = self.objective_with_attachments(objective);
-        self.set_output(format!(
-            "Пользователь\n{}\n\nЗапускаю агентную сессию...",
-            objective
-        ));
         self.set_status("running");
         AppIntent::Submit(objective)
     }
@@ -124,11 +119,34 @@ impl WorkspaceApp {
     }
 
     pub(crate) fn run_command_input(&mut self, input: String, state: &WorkspaceState) -> AppIntent {
+        if input == "/project" {
+            return self.open_project_panel();
+        }
+        if input == "/new" {
+            self.active_session_id = None;
+            self.center_panel = CenterPanel::Timeline;
+            self.clear_output();
+            self.set_status("новая сессия: введите задачу");
+            return AppIntent::None;
+        }
+        if let Some(path) = input.strip_prefix("/project ").map(str::trim) {
+            return self.open_project_from_command(path);
+        }
+        match input.as_str() {
+            "/timeline" => return self.open_timeline_panel(),
+            "/sessions" => return self.open_sessions_panel(),
+            "/models" => return self.open_models_panel(state),
+            "/instructions" => return self.open_item_panel(CenterPanel::Instructions),
+            "/skills" => return self.open_item_panel(CenterPanel::Skills),
+            "/mcp" => return self.open_item_panel(CenterPanel::Mcp),
+            "/limits" => return self.open_item_panel(CenterPanel::Limits),
+            _ => {}
+        }
         match parse_command(&input, state) {
             CommandAction::Display(output) => {
                 self.clear_pending_prompt();
                 self.center_panel = CenterPanel::Timeline;
-                self.set_status("ready");
+                self.set_status("результат команды");
                 self.set_output(output);
                 AppIntent::None
             }
@@ -175,76 +193,35 @@ impl WorkspaceApp {
     pub(crate) fn activate_menu(&mut self, state: &WorkspaceState) -> AppIntent {
         let item = MENU_ITEMS.get(self.selected_menu).unwrap_or(&MENU_ITEMS[0]);
         match item.panel {
-            MenuPanel::Timeline => self.run_command_input("/timeline".into(), state),
+            MenuPanel::Project => self.open_project_panel(),
+            MenuPanel::Timeline => self.open_timeline_panel(),
             MenuPanel::Diff => self.run_command_input("/diff".into(), state),
             MenuPanel::Sessions => self.open_sessions_panel(),
             MenuPanel::Models => self.open_models_panel(state),
-            MenuPanel::Instructions => self.run_command_input("/instructions".into(), state),
-            MenuPanel::Skills => self.run_command_input("/skills".into(), state),
-            MenuPanel::Mcp => self.run_command_input("/mcp".into(), state),
-            MenuPanel::Limits => self.run_command_input("/limits".into(), state),
+            MenuPanel::Instructions => self.open_item_panel(CenterPanel::Instructions),
+            MenuPanel::Skills => self.open_item_panel(CenterPanel::Skills),
+            MenuPanel::Mcp => self.open_item_panel(CenterPanel::Mcp),
+            MenuPanel::Limits => self.open_item_panel(CenterPanel::Limits),
         }
     }
 
-    fn open_sessions_panel(&mut self) -> AppIntent {
-        let Some(root) = self.working_folder().map(std::path::Path::to_path_buf) else {
-            self.set_status("project root is not ready");
+    fn open_project_from_command(&mut self, path: &str) -> AppIntent {
+        if path.is_empty() {
+            self.set_status("project: укажите путь");
             return AppIntent::None;
-        };
-        match crate::session_picker::session_ids(&root) {
-            Ok(sessions) => {
-                self.sessions = sessions;
-                self.selected_session = selected_index(&self.sessions, self.active_session_id());
-                self.center_panel = CenterPanel::Sessions;
-                self.clear_output();
-                self.set_status("сессии");
-            }
-            Err(error) => self.set_status(format!("sessions failed: {error}")),
+        }
+        match self.choose_working_folder(path) {
+            Ok(()) => self.set_status(format!("проект: {path}")),
+            Err(error) => self.set_status(format!("project failed: {error}")),
         }
         AppIntent::None
     }
-
-    fn open_models_panel(&mut self, state: &WorkspaceState) -> AppIntent {
-        self.models = choices_from_state(state);
-        self.selected_model = self.selected_model.min(self.models.len().saturating_sub(1));
-        self.center_panel = CenterPanel::Models;
-        self.clear_output();
-        self.set_status("модели");
-        AppIntent::None
-    }
-
-    pub(crate) fn activate_center_selection(&mut self) -> Option<AppIntent> {
-        match self.center_panel {
-            CenterPanel::Sessions => {
-                let id = self.sessions.get(self.selected_session)?.clone();
-                self.active_session_id = Some(id.clone());
-                self.center_panel = CenterPanel::Timeline;
-                self.clear_output();
-                self.set_status(format!("сессия: {id}"));
-                Some(AppIntent::None)
-            }
-            CenterPanel::Models => {
-                let choice = self.models.get(self.selected_model)?;
-                Some(AppIntent::Command(format!(
-                    "models set --agent {} --model {}",
-                    choice.agent(),
-                    choice.model()
-                )))
-            }
-            _ => None,
-        }
-    }
-}
-
-fn selected_index(items: &[String], active: Option<&str>) -> usize {
-    active
-        .and_then(|id| items.iter().position(|item| item == id))
-        .unwrap_or(0)
 }
 
 fn panel_for_command(line: &str) -> CenterPanel {
     match line.split_whitespace().next() {
         Some("diff") => CenterPanel::Diff,
+        Some("project") => CenterPanel::Project,
         Some("sessions") => CenterPanel::Sessions,
         Some("models") => CenterPanel::Models,
         Some("instructions") => CenterPanel::Instructions,

@@ -7,6 +7,14 @@ pub struct CommandSpec {
 pub fn command_specs() -> &'static [CommandSpec] {
     &[
         CommandSpec {
+            name: "project",
+            description: "выбрать папку проекта",
+        },
+        CommandSpec {
+            name: "new",
+            description: "начать новую сессию в проекте",
+        },
+        CommandSpec {
             name: "agents",
             description: "показать активных агентов",
         },

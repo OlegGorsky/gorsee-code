@@ -28,6 +28,13 @@ pub fn strong() -> Style {
     normal().add_modifier(Modifier::BOLD)
 }
 
+pub fn selection() -> Style {
+    Style::default()
+        .fg(Color::Rgb(248, 250, 255))
+        .bg(Color::Rgb(76, 60, 180))
+        .add_modifier(Modifier::BOLD)
+}
+
 pub fn border() -> Style {
     Style::default().fg(Color::Rgb(48, 57, 104))
 }

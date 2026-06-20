@@ -26,6 +26,9 @@ impl WorkspaceApp {
             .sync_root(&next)
             .with_context(|| format!("open working folder {}", next.display()))?;
         self.editor = None;
+        self.active_session_id = None;
+        self.sessions.clear();
+        self.selected_session = 0;
         self.confirm_close_editor = false;
         self.clear_output();
         self.completion = None;
@@ -58,6 +61,9 @@ impl WorkspaceApp {
             .sync_root(&parent)
             .with_context(|| format!("open working folder {}", parent.display()))?;
         self.editor = None;
+        self.active_session_id = None;
+        self.sessions.clear();
+        self.selected_session = 0;
         self.confirm_close_editor = false;
         self.clear_output();
         self.completion = None;
