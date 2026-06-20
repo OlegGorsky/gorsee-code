@@ -11,5 +11,10 @@ rust-version.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true
+gorsee-code-core = { path = "../gorsee-code-core" }
 gorsee-code-ui-state = { path = "../gorsee-code-ui-state" }
+ratatui.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

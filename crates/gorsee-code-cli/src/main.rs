@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     let options = CliOptions::current()?;
     prompt_for_key_if_needed(&args, &options)?;
 
-    if args.len() == 1 {
+    if opens_interactive_tui(&args) {
         run_interactive_tui(&options)?;
         return Ok(());
     }
@@ -19,7 +19,9 @@ fn main() -> Result<()> {
 }
 
 fn prompt_for_key_if_needed(args: &[OsString], options: &CliOptions) -> Result<()> {
-    if args.len() != 1 || auth::api_key(&options.root, options.env_key.as_deref())?.is_some() {
+    if !opens_interactive_tui(args)
+        || auth::api_key(&options.root, options.env_key.as_deref())?.is_some()
+    {
         return Ok(());
     }
 
@@ -29,4 +31,8 @@ fn prompt_for_key_if_needed(args: &[OsString], options: &CliOptions) -> Result<(
         auth::set(&options.root, key)?;
     }
     Ok(())
+}
+
+fn opens_interactive_tui(args: &[OsString]) -> bool {
+    args.len() == 1 || (args.len() == 2 && args[1] == "tui")
 }

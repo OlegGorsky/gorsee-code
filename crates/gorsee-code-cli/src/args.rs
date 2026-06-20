@@ -75,12 +75,21 @@ pub struct ModelsArgs {
 pub enum ModelsCommand {
     Benchmark,
     Recommend(ModelsRecommendArgs),
+    Set(ModelsSetArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct ModelsRecommendArgs {
     #[arg(long, num_args = 1..)]
     pub task: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ModelsSetArgs {
+    #[arg(long)]
+    pub agent: String,
+    #[arg(long)]
+    pub model: String,
 }
 
 #[derive(Debug, Args)]

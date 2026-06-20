@@ -5,9 +5,9 @@ use gorsee_code_config::AgentConfig;
 use gorsee_code_core::ModelCapability;
 
 use crate::{
-    args::{ModelsArgs, ModelsCommand, ModelsRecommendArgs},
+    args::{ModelsArgs, ModelsCommand, ModelsRecommendArgs, ModelsSetArgs},
     commands_extra::load_or_default,
-    live,
+    live, paths,
 };
 
 pub fn run(root: &Path, env_key: Option<&str>, args: ModelsArgs) -> Result<String> {
@@ -15,6 +15,7 @@ pub fn run(root: &Path, env_key: Option<&str>, args: ModelsArgs) -> Result<Strin
         None => list(root, env_key),
         Some(ModelsCommand::Benchmark) => benchmark(root, env_key),
         Some(ModelsCommand::Recommend(args)) => recommend(root, args),
+        Some(ModelsCommand::Set(args)) => set(root, args),
     }
 }
 
@@ -54,6 +55,24 @@ fn recommend(root: &Path, args: ModelsRecommendArgs) -> Result<String> {
         .get(agent_id)
         .ok_or_else(|| anyhow!("agent profile missing: {agent_id}"))?;
     Ok(render_recommendation(task, agent_id, reason, profile))
+}
+
+fn set(root: &Path, args: ModelsSetArgs) -> Result<String> {
+    let mut config = load_or_default(root);
+    let agent = args.agent.trim();
+    let model = args.model.trim();
+    if agent.is_empty() {
+        return Err(anyhow!("missing agent"));
+    }
+    if model.is_empty() {
+        return Err(anyhow!("missing model"));
+    }
+    let Some(profile) = config.agents.get_mut(agent) else {
+        return Err(anyhow!("unknown agent: {agent}"));
+    };
+    profile.model = model.to_string();
+    config.save(paths::config_path(root))?;
+    Ok(format!("models: updated\nagent={agent}\nmodel={model}\n"))
 }
 
 fn render_live_models(header: &str, models: &[ModelCapability]) -> String {

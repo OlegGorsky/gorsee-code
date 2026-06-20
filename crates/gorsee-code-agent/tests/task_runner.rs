@@ -187,6 +187,17 @@ fn sequential_runner_records_model_usage_and_budget_warning() {
 
     let usage = artifact_json(&summary.artifacts, "usage.json");
     assert_eq!(usage["tokens_used"], 80);
+
+    let ledger_path = temp
+        .path()
+        .join(".gorsee-code/sessions")
+        .join(&summary.session_id)
+        .join("token-ledger.json");
+    let ledger: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(ledger_path).unwrap()).unwrap();
+    assert_eq!(ledger["records"][0]["agent_id"], "architect");
+    assert_eq!(ledger["records"][0]["input_tokens"], 55);
+    assert_eq!(ledger["records"][0]["output_tokens"], 25);
 }
 
 fn assert_session_artifacts(artifacts: &[gorsee_code_artifacts::ArtifactRecord]) {

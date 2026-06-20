@@ -4,6 +4,17 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub enum KeyAction {
     Insert(char),
     Backspace,
+    MoveLeft,
+    MoveRight,
+    MoveSelectionUp,
+    MoveSelectionDown,
+    ScrollUp,
+    ScrollDown,
+    Newline,
+    AcceptCompletion,
+    FocusNext,
+    Save,
+    CloseEditor,
     Submit,
     Approve,
     Deny,
@@ -19,8 +30,30 @@ pub fn action_for_key(key: KeyEvent, prompt_empty: bool) -> KeyAction {
     }
     match key.code {
         KeyCode::Esc => KeyAction::Quit,
+        KeyCode::Enter
+            if key.modifiers.contains(KeyModifiers::SHIFT)
+                || key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            KeyAction::Newline
+        }
         KeyCode::Enter => KeyAction::Submit,
         KeyCode::Backspace => KeyAction::Backspace,
+        KeyCode::Left => KeyAction::MoveLeft,
+        KeyCode::Right => KeyAction::MoveRight,
+        KeyCode::Up => KeyAction::MoveSelectionUp,
+        KeyCode::Down => KeyAction::MoveSelectionDown,
+        KeyCode::PageUp => KeyAction::ScrollUp,
+        KeyCode::PageDown => KeyAction::ScrollDown,
+        KeyCode::Tab => KeyAction::FocusNext,
+        KeyCode::Char('s' | 'S') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyAction::Save
+        }
+        KeyCode::Char('w' | 'W') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyAction::CloseEditor
+        }
+        KeyCode::Char('j' | 'J') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyAction::Newline
+        }
         KeyCode::Char(value) => action_for_char(value, prompt_empty),
         _ => KeyAction::Ignore,
     }
@@ -48,10 +81,6 @@ fn action_for_char(value: char, prompt_empty: bool) -> KeyAction {
         return KeyAction::Insert(value);
     }
     match value.to_ascii_lowercase() {
-        'a' => KeyAction::Approve,
-        'd' => KeyAction::Deny,
-        'p' => KeyAction::Pause,
-        'r' => KeyAction::Resume,
         'q' => KeyAction::Quit,
         _ => KeyAction::Insert(value),
     }

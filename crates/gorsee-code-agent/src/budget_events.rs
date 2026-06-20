@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use gorsee_code_core::{AgentProfile, EventKind};
 use gorsee_code_hooks::{HookBus, HookContext, HookPoint};
 use gorsee_code_neurogate::ChatResponse;
@@ -46,6 +48,16 @@ pub(crate) fn usage_record_from_response(
 
 pub(crate) fn sync_manifest_budget(manifest: &mut SessionManifest, usage_records: &[UsageRecord]) {
     manifest.budget.tokens_used = ledger_from(usage_records).totals().tokens;
+}
+
+pub(crate) fn write_token_ledger(
+    session_dir: &Path,
+    usage_records: &[UsageRecord],
+) -> Result<(), AgentRunError> {
+    let text = serde_json::to_string_pretty(&ledger_from(usage_records))
+        .map_err(|error| AgentRunError::Runtime(error.to_string()))?;
+    fs::write(session_dir.join("token-ledger.json"), text)
+        .map_err(|error| AgentRunError::Runtime(error.to_string()))
 }
 
 pub(crate) fn record_budget_status(

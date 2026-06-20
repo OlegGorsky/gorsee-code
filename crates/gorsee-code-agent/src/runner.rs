@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::{
     agent_loop::{run_agent, AgentOutcome, AgentRunContext},
-    budget_events::{record_budget_status, sync_manifest_budget},
+    budget_events::{record_budget_status, sync_manifest_budget, write_token_ledger},
     client::ChatClient,
     events::EventSink,
     execution::{save_pending_execution, ExecutionOutput, PendingExecution},
@@ -109,6 +109,7 @@ impl TaskRunner {
                     finish_unsuccessful(&self.store, &mut sink, &mut manifest, &error)?;
                     return Err(error);
                 }
+                write_token_ledger(&session_dir, &usage_records)?;
                 let mut artifacts = write_run_artifacts(
                     &session_dir,
                     &manifest,

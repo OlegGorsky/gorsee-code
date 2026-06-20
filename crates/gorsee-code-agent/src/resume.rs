@@ -6,7 +6,7 @@ use gorsee_code_usage::UsageRecord;
 
 use crate::{
     agent_loop::{resume_agent, run_agent, AgentOutcome, AgentRunContext, PendingApproval},
-    budget_events::{record_budget_status, sync_manifest_budget},
+    budget_events::{record_budget_status, sync_manifest_budget, write_token_ledger},
     client::ChatClient,
     events::EventSink,
     execution::{clear_pending_execution, load_pending_execution, PendingExecution},
@@ -45,6 +45,7 @@ pub(crate) fn resume_after_decision<C: ChatClient>(
                 finish_unsuccessful(store, &mut sink, &mut manifest, &error)?;
                 return Err(error);
             }
+            write_token_ledger(&session_dir, &usage_records)?;
             let mut artifacts = write_run_artifacts(
                 &session_dir,
                 &manifest,

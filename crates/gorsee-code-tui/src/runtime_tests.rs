@@ -1,0 +1,134 @@
+use super::*;
+use crate::{AppIntent, KeyAction};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
+
+#[test]
+fn failed_worker_sets_visible_output() {
+    let job = thread::spawn(|| -> Result<String> { Err(anyhow::anyhow!("missing auth")) });
+    let mut app = WorkspaceApp::new();
+
+    finish_joined(job, &mut app);
+
+    assert!(app.status().unwrap().contains("missing auth"));
+    assert!(app.output().unwrap().contains("missing auth"));
+}
+
+#[test]
+fn command_handler_uses_selected_working_folder() {
+    let temp = tempfile::tempdir().unwrap();
+    let child = temp.path().join("child");
+    std::fs::create_dir(&child).unwrap();
+    let calls = Arc::new(Mutex::new(Vec::<(PathBuf, String)>::new()));
+    let command_calls = calls.clone();
+    let handlers = TuiHandlers::new(
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        move |root, line| {
+            command_calls
+                .lock()
+                .unwrap()
+                .push((root.to_path_buf(), line));
+            Ok("ok".into())
+        },
+    );
+    let mut app = WorkspaceApp::new();
+    let mut worker = None;
+
+    app.sync_project_root(temp.path()).unwrap();
+    app.choose_working_folder(&child).unwrap();
+    process_intent(
+        AppIntent::Command("diff".into()),
+        &mut worker,
+        &handlers,
+        &mut app,
+        temp.path(),
+    );
+    finish_joined(worker.take().expect("worker"), &mut app);
+
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        &[(child, "diff".to_string())]
+    );
+}
+
+#[test]
+fn busy_worker_restores_submitted_prompt() {
+    let handlers = TuiHandlers::new(
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+    );
+    let state = gorsee_code_ui_state::workspace_running();
+    let mut app = WorkspaceApp::new();
+    let mut worker = Some(thread::spawn(|| {
+        std::thread::sleep(Duration::from_millis(50));
+        Ok("first".into())
+    }));
+
+    for value in "second".chars() {
+        app.handle_action(KeyAction::Insert(value), &state);
+    }
+    let intent = app.handle_action(KeyAction::Submit, &state);
+    assert_eq!(app.input(), "");
+
+    assert!(!process_intent(
+        intent,
+        &mut worker,
+        &handlers,
+        &mut app,
+        Path::new("."),
+    ));
+
+    assert_eq!(app.input(), "second");
+    assert_eq!(app.status(), Some("занято: дождитесь завершения действия"));
+    finish_joined(worker.take().expect("worker"), &mut app);
+}
+
+#[test]
+fn quit_while_worker_is_running_requires_second_quit() {
+    let handlers = TuiHandlers::new(
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+    );
+    let mut app = WorkspaceApp::new();
+    let mut worker = Some(thread::spawn(|| {
+        std::thread::sleep(Duration::from_millis(50));
+        Ok("done".into())
+    }));
+
+    assert!(!process_intent(
+        AppIntent::Quit,
+        &mut worker,
+        &handlers,
+        &mut app,
+        Path::new("."),
+    ));
+    assert_eq!(app.status(), Some("выход подтвержден"));
+    assert!(process_intent(
+        AppIntent::Quit,
+        &mut worker,
+        &handlers,
+        &mut app,
+        Path::new("."),
+    ));
+    finish_joined(worker.take().expect("worker"), &mut app);
+}
+
+fn noop_handler(_root: &Path, _line: String) -> Result<String> {
+    Ok(String::new())
+}

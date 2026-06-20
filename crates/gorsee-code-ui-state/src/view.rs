@@ -58,13 +58,29 @@ pub struct WorkspaceState {
 
 impl AgentView {
     pub fn from_profile(profile: &AgentProfile, status: AgentStatus, tokens_used: u64) -> Self {
+        Self::from_parts(
+            profile.id(),
+            &profile.model,
+            status,
+            tokens_used,
+            profile.budget_tokens,
+        )
+    }
+
+    pub fn from_parts(
+        id: &str,
+        model: &str,
+        status: AgentStatus,
+        tokens_used: u64,
+        tokens_limit: u64,
+    ) -> Self {
         Self {
-            id: profile.id().into(),
-            role: profile.id().into(),
-            model: profile.model.clone(),
+            id: id.into(),
+            role: id.into(),
+            model: model.into(),
             status: format!("{status:?}").to_lowercase(),
             tokens_used,
-            tokens_limit: profile.budget_tokens,
+            tokens_limit,
         }
     }
 }

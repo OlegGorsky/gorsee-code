@@ -5,17 +5,19 @@ use crate::WorkspaceApp;
 pub fn render_app(state: &WorkspaceState, app: &WorkspaceApp) -> String {
     let mut out = render_workspace(state);
     out.push('\n');
-    out.push_str("What should Gorsee Code do?\n");
+    out.push_str("Введите задачу для Gorsee Code\n");
     out.push_str("> ");
     out.push_str(app.input());
     out.push('\n');
-    out.push_str("Enter run | /help commands | a approve | d deny | p pause | r resume | q quit\n");
+    out.push_str(
+        "Enter запуск | /help команды | a подтвердить | d отклонить | p пауза | r продолжить | q выход\n",
+    );
     if let Some(status) = app.status() {
-        out.push_str(&format!("Status: {status}\n"));
+        out.push_str(&format!("Статус: {status}\n"));
     }
     if let Some(output) = app.output() {
         out.push('\n');
-        out.push_str("Output\n");
+        out.push_str("Вывод\n");
         out.push_str(output);
         if !output.ends_with('\n') {
             out.push('\n');
@@ -37,17 +39,17 @@ pub fn render_workspace(state: &WorkspaceState) -> String {
 fn push_header(out: &mut String, state: &WorkspaceState) {
     out.push_str("Gorsee Code Workspace\n");
     out.push_str(&format!(
-        "Session {} | Status {} | Repo {} | Branch {}\n",
+        "Сессия {} | Статус {} | Repo {} | Branch {}\n",
         state.session.id, state.session.status, state.session.repo, state.session.branch
     ));
     out.push_str(&format!(
-        "Security workspace approvals | Gateway {}\n\n",
+        "Безопасность workspace approvals | Gateway {}\n\n",
         state.gateway_status
     ));
 }
 
 fn push_agents(out: &mut String, state: &WorkspaceState) {
-    out.push_str("Agents\n");
+    out.push_str("Агенты\n");
     for agent in &state.agents {
         out.push_str(&format!(
             "- {} role={} status={} model={} tokens={}/{}\n",
@@ -58,7 +60,7 @@ fn push_agents(out: &mut String, state: &WorkspaceState) {
 }
 
 fn push_timeline(out: &mut String, state: &WorkspaceState) {
-    out.push_str("Timeline\n");
+    out.push_str("Лента\n");
     for event in &state.timeline {
         let agent = event.agent_id.as_deref().unwrap_or("session");
         out.push_str(&format!(
@@ -70,9 +72,9 @@ fn push_timeline(out: &mut String, state: &WorkspaceState) {
 }
 
 fn push_approvals(out: &mut String, state: &WorkspaceState) {
-    out.push_str("Approvals\n");
+    out.push_str("Подтверждения\n");
     if state.approvals.is_empty() {
-        out.push_str("- none\n\n");
+        out.push_str("- нет\n\n");
         return;
     }
     for approval in &state.approvals {
@@ -87,19 +89,19 @@ fn push_approvals(out: &mut String, state: &WorkspaceState) {
 }
 
 fn push_inspector(out: &mut String, state: &WorkspaceState) {
-    out.push_str("Inspector\n");
+    out.push_str("Инспектор\n");
     let budget_status = budget_status(state);
     out.push_str(&format!(
-        "- Budget: {}/{} ({:.1}%) {}\n",
+        "- Лимиты: {}/{} токенов ({:.1}%) {}\n",
         state.budget.used_tokens,
         state.budget.limit_tokens,
         state.budget.percent_used,
         budget_status
     ));
     if state.budget.warning {
-        out.push_str("- Limits: review current usage before continuing\n");
+        out.push_str("- Лимиты: проверь текущее использование перед продолжением\n");
     } else {
-        out.push_str("- Limits: within configured budget\n");
+        out.push_str("- Лимиты: в рамках настроенного бюджета\n");
     }
 }
 

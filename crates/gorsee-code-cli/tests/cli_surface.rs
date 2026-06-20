@@ -116,6 +116,33 @@ fn models_recommend_selects_coding_profile_from_task() {
 }
 
 #[test]
+fn models_set_updates_agent_model_in_project_config() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let output = run_with_options(
+        [
+            "gcode",
+            "models",
+            "set",
+            "--agent",
+            "coder",
+            "--model",
+            "kimi-k2.6",
+        ],
+        CliOptions::for_root(temp.path()),
+    )
+    .unwrap();
+    let config = fs::read_to_string(temp.path().join("gorsee-code.toml")).unwrap();
+
+    assert!(output.contains("models: updated"));
+    assert!(output.contains("agent=coder"));
+    assert!(output.contains("model=kimi-k2.6"));
+    assert!(config.contains("[agents.coder]"));
+    assert!(config.contains("model = \"kimi-k2.6\""));
+    assert_product_output(&output);
+}
+
+#[test]
 fn limits_json_reports_missing_auth_without_network() {
     let temp = tempfile::tempdir().unwrap();
 

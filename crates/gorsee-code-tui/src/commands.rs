@@ -38,37 +38,40 @@ pub fn parse_command(input: &str, state: &WorkspaceState) -> CommandAction {
         "resume" => session_command(state, args.first(), CommandAction::Resume),
         "quit" | "exit" => CommandAction::Quit,
         "capabilities" | "checkpoint" | "diff" | "doctor" | "export" | "files" | "hooks"
-        | "limits" | "models" | "replay" | "sessions" | "skills" | "tools" => {
-            CommandAction::External(external_line(command, &args))
-        }
+        | "instructions" | "limits" | "mcp" | "models" | "replay" | "sessions" | "skills"
+        | "terminal" | "tools" => CommandAction::External(external_line(command, &args)),
         _ => CommandAction::Display(format!("unknown command: /{command}\n{}", help())),
     }
 }
 
 fn help() -> String {
     [
-        "commands:",
-        "- /agents show active coding agents",
-        "- /budget show token usage",
-        "- /doctor check local setup and NeuroGate access",
-        "- /models show model routing",
-        "- /limits show live account limits",
-        "- /capabilities show available model capabilities",
-        "- /skills list coding skills",
-        "- /hooks show enabled safety hooks",
-        "- /route show workspace routing",
-        "- /timeline show recent events",
-        "- /context show repo, branch, session and gateway",
-        "- /approvals show pending approvals",
-        "- /checkpoint save current session state",
-        "- /approve [id] approve a pending tool call",
-        "- /deny [id] deny a pending tool call",
-        "- /pause [id] pause a running session",
-        "- /resume [id] resume a paused session",
-        "- /files show workspace files",
-        "- /diff show git diff",
-        "- /export [id] export a session",
-        "- /replay [id] replay a session",
+        "команды:",
+        "- /agents показать активных агентов",
+        "- /doctor проверить локальную настройку и NeuroGate",
+        "- /models показать маршрутизацию моделей",
+        "- /models set --agent <id> --model <model> назначить модель агенту",
+        "- /limits показать лимиты аккаунта",
+        "- /diff показать git diff",
+        "- /sessions показать сохраненные сессии",
+        "- /instructions показать проектные инструкции",
+        "- /mcp показать доступные MCP/tools",
+        "- /capabilities показать возможности моделей",
+        "- /skills список скиллов",
+        "- /hooks показать safety hooks",
+        "- /route показать маршрут агентов",
+        "- /timeline показать события сессии",
+        "- /context показать проект, ветку, сессию и gateway",
+        "- /approvals показать ожидающие подтверждения",
+        "- /terminal <cmd> выполнить команду в рабочей папке",
+        "- /checkpoint сохранить состояние сессии",
+        "- /approve [id] подтвердить tool call",
+        "- /deny [id] отклонить tool call",
+        "- /pause [id] поставить сессию на паузу",
+        "- /resume [id] продолжить сессию",
+        "- /files показать файлы workspace",
+        "- /export [id] экспортировать сессию",
+        "- /replay [id] воспроизвести сессию",
     ]
     .join("\n")
         + "\n"

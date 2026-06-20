@@ -6,14 +6,31 @@ use std::{
     process::Command,
 };
 
-use gorsee_code_core::{default_agent_matrix, AgentStatus, Event};
+use gorsee_code_core::Event;
 use gorsee_code_session::{ApprovalRecord, ApprovalStatus, SessionManifest};
 
-use crate::{AgentView, BudgetView, EventView, SessionView, ToolCallView, WorkspaceState};
+use crate::{
+    workspace_agents::{agent_views, budget_view, config_for, read_ledger},
+    EventView, SessionView, ToolCallView, WorkspaceState,
+};
 
 pub fn workspace_state(root: impl AsRef<Path>) -> WorkspaceState {
     let root = root.as_ref();
     if let Some((manifest, events, approvals)) = latest_session(root) {
+        return session_state(root, manifest, events, approvals);
+    }
+    ready_state(root)
+}
+
+pub fn workspace_state_for_session(
+    root: impl AsRef<Path>,
+    session_id: Option<&str>,
+) -> WorkspaceState {
+    let root = root.as_ref();
+    let Some(session_id) = session_id else {
+        return workspace_state(root);
+    };
+    if let Some((manifest, events, approvals)) = requested_session(root, session_id) {
         return session_state(root, manifest, events, approvals);
     }
     ready_state(root)
@@ -28,9 +45,9 @@ fn ready_state(root: &Path) -> WorkspaceState {
             repo: root.display().to_string(),
             branch: current_branch(root),
         },
-        agents: agent_views("ready", 0),
+        agents: agent_views(root, "ready", 0, None),
         timeline: vec![ready_event()],
-        budget: budget_view(0, 80_000),
+        budget: budget_view(0, config_for(root).budget.session_tokens),
         approvals: Vec::new(),
         gateway_status: "local".into(),
     }
@@ -42,6 +59,12 @@ fn session_state(
     events: Vec<Event>,
     approvals: Vec<ApprovalRecord>,
 ) -> WorkspaceState {
+    let ledger = read_ledger(root, &manifest.id);
+    let used_tokens = ledger
+        .as_ref()
+        .map(|ledger| ledger.totals().tokens)
+        .filter(|tokens| *tokens > 0)
+        .unwrap_or(manifest.budget.tokens_used);
     WorkspaceState {
         session: SessionView {
             id: manifest.id.clone(),
@@ -50,9 +73,9 @@ fn session_state(
             repo: repo_label(root, &manifest),
             branch: branch_label(root, &manifest),
         },
-        agents: agent_views(&manifest.status, manifest.budget.tokens_used),
+        agents: agent_views(root, &manifest.status, used_tokens, ledger.as_ref()),
         timeline: event_views(events),
-        budget: budget_view(manifest.budget.tokens_used, manifest.budget.tokens_limit),
+        budget: budget_view(used_tokens, manifest.budget.tokens_limit),
         approvals: approval_views(approvals),
         gateway_status: "local".into(),
     }
@@ -60,6 +83,17 @@ fn session_state(
 
 fn latest_session(root: &Path) -> Option<(SessionManifest, Vec<Event>, Vec<ApprovalRecord>)> {
     let dir = latest_session_dir(root)?;
+    let manifest = read_manifest(&dir)?;
+    let events = read_events(&dir);
+    let approvals = read_approvals(&dir);
+    Some((manifest, events, approvals))
+}
+
+fn requested_session(
+    root: &Path,
+    session_id: &str,
+) -> Option<(SessionManifest, Vec<Event>, Vec<ApprovalRecord>)> {
+    let dir = root.join(".gorsee-code").join("sessions").join(session_id);
     let manifest = read_manifest(&dir)?;
     let events = read_events(&dir);
     let approvals = read_approvals(&dir);
@@ -170,53 +204,6 @@ fn ready_event() -> EventView {
     }
 }
 
-fn agent_views(status: &str, used_tokens: u64) -> Vec<AgentView> {
-    let profiles = default_agent_matrix();
-    let per_agent = used_tokens / profiles.len().max(1) as u64;
-    profiles
-        .iter()
-        .enumerate()
-        .map(|(index, profile)| {
-            AgentView::from_profile(profile, agent_status(status, index), per_agent)
-        })
-        .collect()
-}
-
-fn agent_status(status: &str, index: usize) -> AgentStatus {
-    match status {
-        "finished" => AgentStatus::Finished,
-        "failed" => AgentStatus::Failed,
-        "waiting_approval" => AgentStatus::WaitingApproval,
-        "running" => running_status(index),
-        _ => AgentStatus::Idle,
-    }
-}
-
-fn running_status(index: usize) -> AgentStatus {
-    match index {
-        0 => AgentStatus::Planning,
-        1 => AgentStatus::Reading,
-        2 => AgentStatus::Patching,
-        3 => AgentStatus::Validating,
-        _ => AgentStatus::Idle,
-    }
-}
-
-fn budget_view(used_tokens: u64, limit_tokens: u64) -> BudgetView {
-    let percent_used = if limit_tokens == 0 {
-        100.0
-    } else {
-        used_tokens as f64 * 100.0 / limit_tokens as f64
-    };
-    BudgetView {
-        used_tokens,
-        limit_tokens,
-        percent_used,
-        warning: percent_used >= 75.0,
-        stopped: percent_used >= 100.0,
-    }
-}
-
 fn repo_label(root: &Path, manifest: &SessionManifest) -> String {
     if manifest.repo.trim().is_empty() {
         root.display().to_string()
@@ -247,17 +234,5 @@ fn current_branch(root: &Path) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_workspace_is_ready() {
-        let temp = tempfile::tempdir().unwrap();
-        let state = workspace_state(temp.path());
-
-        assert_eq!(state.session.title, "Gorsee Code Workspace");
-        assert_eq!(state.session.status, "ready");
-        assert_eq!(state.budget.used_tokens, 0);
-        assert_eq!(state.timeline[0].kind, "workspace_ready");
-    }
-}
+#[path = "workspace_tests.rs"]
+mod tests;
