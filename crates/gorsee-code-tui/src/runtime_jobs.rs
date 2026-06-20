@@ -99,6 +99,7 @@ pub(crate) fn finish_worker_blocking(
 }
 
 pub(crate) fn finish_joined(job: Worker, app: &mut WorkspaceApp) {
+    app.clear_pending_prompt();
     match job.join() {
         Ok(Ok(output)) => {
             if let Some(session_id) = completed_session_id(&output) {
@@ -152,7 +153,9 @@ fn start_job(
         app.set_status("занято: дождитесь завершения действия");
         return false;
     }
-    app.clear_pending_prompt();
+    if !clear_attachments {
+        app.clear_pending_prompt();
+    }
     if clear_attachments {
         app.clear_attachments();
     }

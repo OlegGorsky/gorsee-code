@@ -7,7 +7,8 @@ use gorsee_code_tui::{run_app, TuiHandlers};
 use gorsee_code_ui_state::{workspace_state, workspace_state_for_session};
 
 use crate::{
-    approval_commands, args::SessionIdArgs, commands_extra::run_task, session_commands, CliOptions,
+    approval_commands, args::SessionIdArgs, commands_extra::run_interactive_task, session_commands,
+    CliOptions,
 };
 
 pub fn run(options: &CliOptions) -> Result<()> {
@@ -37,7 +38,7 @@ fn submit_handler(
     env_key: Option<String>,
 ) -> impl Fn(&Path, String) -> Result<String> + Send + Sync + 'static {
     move |root, objective| {
-        let summary = run_task(root, objective, env_key.as_deref())?;
+        let summary = run_interactive_task(root, objective, env_key.as_deref())?;
         Ok(format_summary(&summary))
     }
 }

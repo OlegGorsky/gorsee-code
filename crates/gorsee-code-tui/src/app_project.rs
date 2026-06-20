@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -12,16 +12,7 @@ impl WorkspaceApp {
     }
 
     pub fn choose_working_folder(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        let base = self
-            .project
-            .root()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| Path::new(".").to_path_buf());
-        let next = if path.as_ref().is_absolute() {
-            path.as_ref().to_path_buf()
-        } else {
-            base.join(path.as_ref())
-        };
+        let next = resolve_working_folder(self.project.root(), path.as_ref());
         self.project
             .sync_root(&next)
             .with_context(|| format!("open working folder {}", next.display()))?;
@@ -103,4 +94,54 @@ impl WorkspaceApp {
     pub fn is_editor_open(&self) -> bool {
         self.editor.is_some()
     }
+}
+
+fn resolve_working_folder(current_root: Option<&Path>, input: &Path) -> PathBuf {
+    let input = expand_home(input);
+    if input.is_absolute() {
+        return input;
+    }
+    for candidate in folder_candidates(current_root, &input) {
+        if candidate.is_dir() {
+            return candidate;
+        }
+    }
+    current_root.map(|root| root.join(&input)).unwrap_or(input)
+}
+
+fn folder_candidates(current_root: Option<&Path>, input: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(root) = current_root {
+        candidates.push(root.join(input));
+        if let Some(parent) = root.parent() {
+            candidates.push(parent.join(input));
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join(input));
+    }
+    if let Some(home) = home_dir() {
+        candidates.push(home.join(input));
+    }
+    candidates.push(input.to_path_buf());
+    candidates
+}
+
+fn expand_home(input: &Path) -> PathBuf {
+    let Some(text) = input.to_str() else {
+        return input.to_path_buf();
+    };
+    if text == "~" {
+        return home_dir().unwrap_or_else(|| input.to_path_buf());
+    }
+    if let Some(rest) = text.strip_prefix("~/") {
+        if let Some(home) = home_dir() {
+            return home.join(rest);
+        }
+    }
+    input.to_path_buf()
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
 }

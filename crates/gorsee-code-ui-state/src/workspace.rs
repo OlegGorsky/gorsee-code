@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use gorsee_code_core::Event;
+use gorsee_code_core::{Event, EventKind};
 use gorsee_code_session::{ApprovalRecord, ApprovalStatus, SessionManifest};
 
 use crate::{
@@ -159,9 +159,17 @@ fn event_views(events: Vec<Event>) -> Vec<EventView> {
     }
     events
         .iter()
+        .filter(|event| visible_event(&event.kind))
         .map(EventView::from_event)
         .map(sanitize_event)
         .collect()
+}
+
+fn visible_event(kind: &EventKind) -> bool {
+    !matches!(
+        kind,
+        EventKind::AgentThinking | EventKind::ContextUpdated | EventKind::ToolStarted
+    )
 }
 
 fn approval_views(approvals: Vec<ApprovalRecord>) -> Vec<ToolCallView> {

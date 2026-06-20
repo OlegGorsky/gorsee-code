@@ -136,10 +136,10 @@ fn route(state: &WorkspaceState) -> String {
 fn timeline(state: &WorkspaceState) -> String {
     let mut out = "timeline:\n".to_string();
     for event in &state.timeline {
-        let agent = event.agent_id.as_deref().unwrap_or("workspace");
+        let agent = event.agent_id.as_deref().unwrap_or(&event.kind);
         out.push_str(&format!(
-            "- #{:04} {} {}: {}\n",
-            event.sequence, event.kind, agent, event.summary
+            "- #{:04} {}: {}\n",
+            event.sequence, agent, event.summary
         ));
     }
     out

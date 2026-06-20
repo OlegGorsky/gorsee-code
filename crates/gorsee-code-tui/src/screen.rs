@@ -113,6 +113,7 @@ fn render_timeline(frame: &mut Frame<'_>, area: Rect, state: &WorkspaceState, ap
     for event in &state.timeline[start..end] {
         push_event(&mut lines, event);
     }
+    push_running_message(&mut lines, app);
 
     let lines = apply_center_selection(lines, area, app);
     frame.render_widget(panel(lines, " Лента "), area);
@@ -186,18 +187,11 @@ fn render_output_panel(frame: &mut Frame<'_>, area: Rect, app: &WorkspaceApp) {
     frame.render_widget(panel(lines, title), area);
 }
 
-fn render_context(frame: &mut Frame<'_>, area: Rect, state: &WorkspaceState, app: &WorkspaceApp) {
+fn render_context(frame: &mut Frame<'_>, area: Rect, state: &WorkspaceState, _app: &WorkspaceApp) {
     let mut lines = vec![
         Line::from(vec![Span::styled("КОНТЕКСТ", theme::accent())]),
         Line::raw(""),
     ];
-    if is_working(app) {
-        lines.push(Line::from(vec![
-            Span::styled(thinking_frame(app.spinner_tick()), theme::cyan()),
-            Span::styled(" Думаю...", theme::accent()),
-        ]));
-        lines.push(Line::raw(""));
-    }
     for agent in &state.agents {
         lines.extend(agent_lines(agent));
     }
@@ -295,4 +289,33 @@ fn is_working(app: &WorkspaceApp) -> bool {
 
 fn thinking_frame(tick: u64) -> &'static str {
     ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"][(tick as usize) % 8]
+}
+
+fn push_running_message(lines: &mut Vec<Line<'static>>, app: &WorkspaceApp) {
+    if !is_working(app) {
+        return;
+    }
+    if let Some(prompt) = app.pending_prompt() {
+        lines.push(Line::raw(""));
+        lines.push(Line::from(vec![
+            Span::styled("Вы", theme::accent()),
+            Span::styled(" · ", theme::dim()),
+            Span::raw(compact_prompt(prompt)),
+        ]));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("  ", theme::dim()),
+        Span::styled(thinking_frame(app.spinner_tick()), theme::cyan()),
+        Span::styled(" думаю...", theme::dim()),
+    ]));
+}
+
+fn compact_prompt(prompt: &str) -> String {
+    let value = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+    if value.chars().count() <= 120 {
+        return value;
+    }
+    let mut compact = value.chars().take(119).collect::<String>();
+    compact.push('…');
+    compact
 }

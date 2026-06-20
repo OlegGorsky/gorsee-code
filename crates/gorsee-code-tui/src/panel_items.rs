@@ -64,6 +64,7 @@ pub(crate) fn instruction_items(root: &Path) -> Vec<PanelItem> {
 }
 
 pub(crate) fn project_items(root: &Path) -> Vec<PanelItem> {
+    let mut seen = std::collections::BTreeSet::new();
     let mut items = vec![
         PanelItem::new(
             "Текущий проект",
@@ -73,23 +74,79 @@ pub(crate) fn project_items(root: &Path) -> Vec<PanelItem> {
         PanelItem::new("Ввести путь", "/project <путь>", PanelItemTarget::None),
     ];
     if let Some(parent) = root.parent() {
-        items.push(PanelItem::new(
+        push_project_path(
+            &mut items,
+            &mut seen,
             "Родительская папка",
             parent.display().to_string(),
-            PanelItemTarget::ProjectPath(parent.to_path_buf()),
-        ));
+            parent.to_path_buf(),
+        );
+        push_folder_items(&mut items, &mut seen, "Рядом", parent, root, 8);
     }
     if let Ok(home) = std::env::var("HOME") {
         let home = PathBuf::from(home);
         if home != root {
-            items.push(PanelItem::new(
+            push_project_path(
+                &mut items,
+                &mut seen,
                 "Домашняя папка",
                 home.display().to_string(),
-                PanelItemTarget::ProjectPath(home),
-            ));
+                home.clone(),
+            );
+            push_folder_items(&mut items, &mut seen, "Дом", &home, root, 8);
         }
     }
+    push_folder_items(&mut items, &mut seen, "Внутри", root, root, 12);
     items
+}
+
+fn push_project_path(
+    items: &mut Vec<PanelItem>,
+    seen: &mut std::collections::BTreeSet<PathBuf>,
+    label: impl Into<String>,
+    detail: impl Into<String>,
+    path: PathBuf,
+) {
+    if seen.insert(path.clone()) {
+        items.push(PanelItem::new(
+            label,
+            detail,
+            PanelItemTarget::ProjectPath(path),
+        ));
+    }
+}
+
+fn push_folder_items(
+    items: &mut Vec<PanelItem>,
+    seen: &mut std::collections::BTreeSet<PathBuf>,
+    group: &str,
+    base: &Path,
+    current: &Path,
+    limit: usize,
+) {
+    let Ok(entries) = fs::read_dir(base) else {
+        return;
+    };
+    let mut folders = entries
+        .flatten()
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+        .map(|entry| entry.path())
+        .filter(|path| path != current)
+        .collect::<Vec<_>>();
+    folders.sort();
+    for folder in folders.into_iter().take(limit) {
+        let name = folder
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("folder");
+        push_project_path(
+            items,
+            seen,
+            format!("{group}: {name}"),
+            folder.display().to_string(),
+            folder,
+        );
+    }
 }
 
 pub(crate) fn skill_items(root: &Path) -> Vec<PanelItem> {

@@ -41,8 +41,8 @@ pub(crate) fn limit_lines(state: &WorkspaceState) -> Vec<Line<'static>> {
         ),
         limit_bar(state.budget.used_tokens, state.budget.limit_tokens),
         Line::from(vec![
-            Span::styled("  5ч/7ч ", theme::cyan()),
-            Span::styled("откройте /limits для live окон", theme::dim()),
+            Span::styled("  live-окна ", theme::cyan()),
+            Span::styled("/limits", theme::dim()),
         ]),
     ]
 }

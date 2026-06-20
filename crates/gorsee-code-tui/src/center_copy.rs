@@ -43,19 +43,18 @@ fn copyable_center_lines(state: &WorkspaceState, app: &WorkspaceApp) -> Vec<Stri
         String::new(),
     ];
     for event in &state.timeline {
-        lines.push(event_title_line(event));
-        lines.push(event_summary_line(event));
+        lines.push(event_line(event));
     }
     lines
 }
 
-fn event_title_line(event: &EventView) -> String {
-    let agent = event.agent_id.as_deref().unwrap_or("workspace");
-    format!("#{:04} {} {}", event.sequence, event.kind, agent)
-}
-
-fn event_summary_line(event: &EventView) -> String {
-    format!("       │ {}", event.summary)
+fn event_line(event: &EventView) -> String {
+    let actor = event
+        .agent_id
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| event.kind.clone());
+    format!("#{:04} {} · {}", event.sequence, actor, event.summary)
 }
 
 fn selected_text(

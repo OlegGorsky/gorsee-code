@@ -90,7 +90,7 @@ impl EventView {
         Self {
             sequence: event.sequence,
             kind: kind_label(&event.kind).into(),
-            agent_id: event.agent_id.clone(),
+            agent_id: event_actor(event),
             summary: summarize_event(event),
         }
     }
@@ -109,25 +109,126 @@ impl From<BudgetStatus> for BudgetView {
 }
 
 fn summarize_event(event: &Event) -> String {
-    event
-        .payload
-        .get("message")
-        .or_else(|| event.payload.get("text"))
-        .and_then(serde_json::Value::as_str)
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| kind_label(&event.kind).to_string())
+    match &event.kind {
+        EventKind::SessionStarted => {
+            payload_text(event, "objective").unwrap_or_else(|| "новая сессия".to_string())
+        }
+        EventKind::SessionFinished => "сессия завершена".into(),
+        EventKind::SessionPaused => "сессия на паузе".into(),
+        EventKind::SessionResumed => "сессия продолжена".into(),
+        EventKind::AgentStarted => payload_text(event, "model")
+            .map(|model| format!("начал работу · {model}"))
+            .unwrap_or_else(|| "начал работу".into()),
+        EventKind::AgentMessage => payload_message(event).unwrap_or_else(|| "ответ".into()),
+        EventKind::ToolRequested => tool_summary(event, "запросил"),
+        EventKind::ToolStarted => tool_summary(event, "запустил"),
+        EventKind::ToolFinished => tool_finished_summary(event),
+        EventKind::ToolApproved => tool_summary(event, "подтвержден"),
+        EventKind::ToolDenied => tool_summary(event, "отклонен"),
+        EventKind::PatchProposed => tool_summary(event, "предложил patch"),
+        EventKind::PatchApplied => "patch применен".into(),
+        EventKind::BudgetWarning => "лимит близко к порогу".into(),
+        EventKind::BudgetExceeded => "лимит исчерпан".into(),
+        EventKind::Error => payload_text(event, "error")
+            .or_else(|| payload_message(event))
+            .unwrap_or_else(|| "ошибка".into()),
+        EventKind::SkillStarted => payload_text(event, "skill")
+            .map(|skill| format!("скилл запущен: {skill}"))
+            .unwrap_or_else(|| "скилл запущен".into()),
+        EventKind::SkillFinished => payload_text(event, "skill")
+            .map(|skill| format!("скилл завершен: {skill}"))
+            .unwrap_or_else(|| "скилл завершен".into()),
+        EventKind::ArtifactCreated => "артефакт создан".into(),
+        EventKind::TestStarted => "тесты запущены".into(),
+        EventKind::TestFinished => "тесты завершены".into(),
+        EventKind::SearchStarted => "поиск запущен".into(),
+        EventKind::SearchFinished => "поиск завершен".into(),
+        EventKind::HookStarted => "hook запущен".into(),
+        EventKind::HookFinished => "hook завершен".into(),
+        EventKind::ModelCapabilityDetected => "модель проверена".into(),
+        EventKind::VisionAnalyzed => "изображение проанализировано".into(),
+        EventKind::ImageGenerated => "изображение создано".into(),
+        EventKind::AgentDelegated => "делегировал задачу".into(),
+        EventKind::AgentThinking => "думает".into(),
+        EventKind::ContextUpdated => context_summary(event),
+    }
 }
 
 fn kind_label(kind: &EventKind) -> &'static str {
     match kind {
-        EventKind::SessionStarted => "session_started",
-        EventKind::SessionFinished => "session_finished",
-        EventKind::SessionPaused => "session_paused",
-        EventKind::SessionResumed => "session_resumed",
-        EventKind::ToolRequested => "tool_requested",
-        EventKind::ToolFinished => "tool_finished",
-        EventKind::BudgetWarning => "budget_warning",
+        EventKind::SessionStarted => "user",
+        EventKind::AgentMessage => "assistant",
+        EventKind::ToolRequested
+        | EventKind::ToolStarted
+        | EventKind::ToolFinished
+        | EventKind::ToolApproved
+        | EventKind::ToolDenied => "tool",
+        EventKind::PatchProposed | EventKind::PatchApplied => "patch",
+        EventKind::BudgetWarning | EventKind::BudgetExceeded => "limit",
         EventKind::Error => "error",
-        _ => "event",
+        _ => "process",
     }
+}
+
+fn event_actor(event: &Event) -> Option<String> {
+    match &event.kind {
+        EventKind::SessionStarted => Some("Вы".into()),
+        _ => event.agent_id.clone(),
+    }
+}
+
+fn payload_message(event: &Event) -> Option<String> {
+    payload_text(event, "message").or_else(|| payload_text(event, "text"))
+}
+
+fn payload_text(event: &Event, key: &str) -> Option<String> {
+    event
+        .payload
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn tool_summary(event: &Event, action: &str) -> String {
+    payload_text(event, "name")
+        .or_else(|| payload_text(event, "tool"))
+        .map(|name| format!("{action} {name}"))
+        .unwrap_or_else(|| action.to_string())
+}
+
+fn tool_finished_summary(event: &Event) -> String {
+    let name = payload_text(event, "name").unwrap_or_else(|| "tool".into());
+    match payload_text(event, "output") {
+        Some(output) => format!("завершил {name}: {}", compact(&output, 96)),
+        None => format!("завершил {name}"),
+    }
+}
+
+fn context_summary(event: &Event) -> String {
+    let answers = event
+        .payload
+        .get("answers")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let tool_results = event
+        .payload
+        .get("tool_results")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    format!("контекст обновлен: {answers} ответов, {tool_results} результатов")
+}
+
+fn compact(value: &str, limit: usize) -> String {
+    let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if value.chars().count() <= limit {
+        return value;
+    }
+    let mut compact = value
+        .chars()
+        .take(limit.saturating_sub(1))
+        .collect::<String>();
+    compact.push('…');
+    compact
 }

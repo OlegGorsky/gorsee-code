@@ -60,6 +60,10 @@ impl WorkspaceApp {
         self.status.as_deref()
     }
 
+    pub(crate) fn pending_prompt(&self) -> Option<&str> {
+        self.pending_restore_input.as_deref()
+    }
+
     pub fn output(&self) -> Option<&str> {
         self.output.as_deref()
     }

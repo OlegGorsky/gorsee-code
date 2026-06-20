@@ -120,17 +120,15 @@ pub(crate) fn completion_lines(app: &WorkspaceApp) -> Vec<Line<'static>> {
 }
 
 pub(crate) fn push_event(lines: &mut Vec<Line<'static>>, event: &EventView) {
+    let actor = event
+        .agent_id
+        .as_deref()
+        .map(title)
+        .unwrap_or_else(|| label(&event.kind));
     lines.push(Line::from(vec![
         Span::styled(format!("#{:04} ", event.sequence), theme::dim()),
-        Span::styled(label(&event.kind), theme::cyan()),
-        Span::raw(" "),
-        Span::styled(
-            title(event.agent_id.as_deref().unwrap_or("workspace")),
-            theme::strong(),
-        ),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("       │ ", theme::dim()),
+        Span::styled(actor, actor_style(&event.kind)),
+        Span::styled(" · ", theme::dim()),
         Span::raw(summary(event)),
     ]));
 }
@@ -217,14 +215,25 @@ fn code_line(line: &str) -> Line<'static> {
 
 fn label(kind: &str) -> String {
     match kind {
-        "event" => "событие".into(),
-        "session_started" => "сессия начата".into(),
-        "session_finished" => "сессия завершена".into(),
-        "tool_call" => "tool call".into(),
-        "tool_result" => "результат tool".into(),
-        "approval_requested" => "запрос подтверждения".into(),
-        "approval_decided" => "решение подтверждения".into(),
+        "assistant" => "Ассистент".into(),
+        "error" => "Ошибка".into(),
+        "limit" => "Лимиты".into(),
+        "patch" => "Patch".into(),
+        "process" => "Процесс".into(),
+        "tool" => "Tool".into(),
+        "user" => "Вы".into(),
+        "workspace_ready" => "Workspace".into(),
         _ => kind.replace('_', " "),
+    }
+}
+
+fn actor_style(kind: &str) -> Style {
+    match kind {
+        "assistant" => theme::green().add_modifier(Modifier::BOLD),
+        "error" | "limit" => theme::warning().add_modifier(Modifier::BOLD),
+        "tool" | "patch" | "process" => theme::cyan(),
+        "user" => theme::accent().add_modifier(Modifier::BOLD),
+        _ => theme::strong(),
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{AgentView, BudgetView};
 pub(super) fn agent_views(
     root: &Path,
     status: &str,
-    used_tokens: u64,
+    _used_tokens: u64,
     ledger: Option<&TokenLedger>,
 ) -> Vec<AgentView> {
     let config = config_for(root);
@@ -19,20 +19,12 @@ pub(super) fn agent_views(
         .map(|profile| profile.id().to_string())
         .collect::<Vec<_>>();
     let ordered = ordered_agent_ids(&default_ids, &config.agents);
-    let fallback = if by_agent.is_empty() {
-        used_tokens / ordered.len().max(1) as u64
-    } else {
-        0
-    };
     ordered
         .iter()
         .enumerate()
         .filter_map(|(index, id)| {
             let profile = config.agents.get(id)?;
-            let tokens = by_agent
-                .get(id)
-                .map(|totals| totals.tokens)
-                .unwrap_or(fallback);
+            let tokens = by_agent.get(id).map(|totals| totals.tokens).unwrap_or(0);
             Some(AgentView::from_parts(
                 id,
                 &profile.model,
@@ -114,9 +106,6 @@ fn agent_status(status: &str, index: usize) -> AgentStatus {
 fn running_status(index: usize) -> AgentStatus {
     match index {
         0 => AgentStatus::Planning,
-        1 => AgentStatus::Reading,
-        2 => AgentStatus::Patching,
-        3 => AgentStatus::Validating,
         _ => AgentStatus::Idle,
     }
 }

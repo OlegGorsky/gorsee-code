@@ -107,6 +107,49 @@ fn workspace_state_uses_token_ledger_by_agent() {
     assert_eq!(coder.tokens_used, 10);
 }
 
+#[test]
+fn timeline_hides_internal_events_and_labels_user_prompt() {
+    let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "chat", "2026-06-20T01:00:00Z", "running");
+    let session = temp.path().join(".gorsee-code/sessions/chat");
+    fs::write(
+        session.join("events.jsonl"),
+        [
+            event_json(1, "session_started", None, r#"{"objective":"Привет"}"#),
+            event_json(
+                2,
+                "agent_thinking",
+                Some("architect"),
+                r#"{"message":"думаю"}"#,
+            ),
+            event_json(
+                3,
+                "agent_message",
+                Some("architect"),
+                r#"{"message":"Привет! Чем помочь?"}"#,
+            ),
+            event_json(4, "tool_started", Some("architect"), r#"{"name":"read"}"#),
+            event_json(
+                5,
+                "context_updated",
+                Some("architect"),
+                r#"{"answers":1,"tool_results":1}"#,
+            ),
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+
+    let state = workspace_state_for_session(temp.path(), Some("chat"));
+
+    assert_eq!(state.timeline.len(), 2);
+    assert_eq!(state.timeline[0].kind, "user");
+    assert_eq!(state.timeline[0].agent_id.as_deref(), Some("Вы"));
+    assert_eq!(state.timeline[0].summary, "Привет");
+    assert_eq!(state.timeline[1].kind, "assistant");
+    assert_eq!(state.timeline[1].summary, "Привет! Чем помочь?");
+}
+
 fn write_session(root: &Path, id: &str, started_at: &str, status: &str) {
     let session = root.join(".gorsee-code/sessions").join(id);
     fs::create_dir_all(&session).unwrap();
@@ -128,4 +171,17 @@ fn write_session(root: &Path, id: &str, started_at: &str, status: &str) {
     .unwrap();
     fs::write(session.join("events.jsonl"), "").unwrap();
     fs::write(session.join("approvals.jsonl"), "").unwrap();
+}
+
+fn event_json(sequence: u64, kind: &str, agent_id: Option<&str>, payload: &str) -> String {
+    serde_json::json!({
+        "id": "00000000-0000-0000-0000-000000000001",
+        "session_id": "chat",
+        "sequence": sequence,
+        "timestamp": "2026-06-20T01:00:00Z",
+        "kind": kind,
+        "agent_id": agent_id,
+        "payload": serde_json::from_str::<serde_json::Value>(payload).unwrap()
+    })
+    .to_string()
 }

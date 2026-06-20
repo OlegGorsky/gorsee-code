@@ -120,6 +120,20 @@ pub fn run_task(
         .run_sequential_with_agents(&spec, &client, agents)?)
 }
 
+pub fn run_interactive_task(
+    root: &Path,
+    objective: impl Into<String>,
+    env_key: Option<&str>,
+) -> Result<TaskRunSummary> {
+    let objective = objective.into();
+    let client = require_live_client(root, env_key)?;
+    let agents = live_interactive_agents(&client, &objective)?;
+    paths::ensure_layout(root)?;
+    let spec = TaskSpec::new(objective, root.display().to_string());
+    Ok(TaskRunner::new(paths::local_dir(root))
+        .run_sequential_with_agents(&spec, &client, agents)?)
+}
+
 pub fn run_skill(
     root: &Path,
     id: &str,
@@ -160,6 +174,91 @@ fn live_agent_matrix(client: &NeuroGateClient) -> Result<Vec<AgentProfile>> {
         agent.model = select_live_model(client, &agent.role, &models, &mut health)?;
     }
     Ok(agents)
+}
+
+fn live_interactive_agents(client: &NeuroGateClient, objective: &str) -> Result<Vec<AgentProfile>> {
+    if is_simple_chat(objective) {
+        return live_primary_agent(client);
+    }
+    live_agent_matrix(client)
+}
+
+fn live_primary_agent(client: &NeuroGateClient) -> Result<Vec<AgentProfile>> {
+    let models = live::block_on(async { Ok(client.list_models().await?) })?;
+    let mut health = BTreeMap::new();
+    let mut agent = default_agent_matrix()
+        .into_iter()
+        .find(|profile| profile.role == AgentRole::Architect)
+        .ok_or_else(|| anyhow!("architect agent profile is missing"))?;
+    agent.model = select_live_model(client, &agent.role, &models, &mut health)?;
+    agent.reasoning = "low".into();
+    agent.tools.clear();
+    agent.budget_tokens = agent.budget_tokens.min(8_000);
+    Ok(vec![agent])
+}
+
+fn is_simple_chat(objective: &str) -> bool {
+    let value = objective.trim().to_lowercase();
+    if value.is_empty() || value.len() > 180 || value.lines().count() > 2 {
+        return false;
+    }
+    if value.starts_with('/') {
+        return false;
+    }
+    if task_like_words().iter().any(|word| value.contains(word)) {
+        return false;
+    }
+    simple_chat_prefixes()
+        .iter()
+        .any(|prefix| value.starts_with(prefix))
+        || value.split_whitespace().count() <= 18
+}
+
+fn simple_chat_prefixes() -> &'static [&'static str] {
+    &[
+        "привет",
+        "здравств",
+        "добрый день",
+        "доброе утро",
+        "добрый вечер",
+        "hello",
+        "hi",
+        "hey",
+        "как дела",
+        "спасибо",
+        "ок",
+        "ладно",
+        "понял",
+    ]
+}
+
+fn task_like_words() -> &'static [&'static str] {
+    &[
+        "добав",
+        "исправ",
+        "почин",
+        "сдел",
+        "созда",
+        "реализ",
+        "проверь",
+        "запусти",
+        "открой",
+        "найди",
+        "удали",
+        "перенеси",
+        "закомить",
+        "зарелиз",
+        "файл",
+        "папк",
+        "код",
+        "тест",
+        "ошиб",
+        "bug",
+        "fix",
+        "commit",
+        "release",
+        "run",
+    ]
 }
 
 fn select_live_model(
@@ -337,6 +436,16 @@ mod tests {
 
         assert!(is_model_rejection(&rejected));
         assert!(!is_model_rejection(&auth));
+    }
+
+    #[test]
+    fn short_greetings_use_interactive_chat_route() {
+        assert!(is_simple_chat("Привет"));
+        assert!(is_simple_chat("hello, как дела?"));
+        assert!(is_simple_chat("почему так долго отвечаешь?"));
+        assert!(!is_simple_chat("Привет, исправь тесты"));
+        assert!(!is_simple_chat("Сделай аудит проекта"));
+        assert!(!is_simple_chat("/project /home/oleg"));
     }
 
     fn model(id: &str) -> ModelCapability {
