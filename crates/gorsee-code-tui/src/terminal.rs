@@ -11,10 +11,7 @@ use crossterm::{
         KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement, EnterAlternateScreen,
-        LeaveAlternateScreen,
-    },
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -75,14 +72,52 @@ pub fn restore_terminal(terminal: &mut TuiTerminal) -> Result<()> {
 fn keyboard_enhancement_requested() -> bool {
     matches!(
         env::var("GORSEE_TUI_KEYBOARD_PROTOCOL").as_deref(),
-        Ok("1" | "true")
-    ) && supports_keyboard_enhancement().unwrap_or(false)
+        Ok("force")
+    )
 }
 
 fn capture_error(first_error: &mut Option<io::Error>, result: io::Result<()>) {
     if first_error.is_none() {
         if let Err(error) = result {
             *first_error = Some(error);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn keyboard_protocol_true_is_ignored_for_terminal_compatibility() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous = env::var("GORSEE_TUI_KEYBOARD_PROTOCOL").ok();
+        env::set_var("GORSEE_TUI_KEYBOARD_PROTOCOL", "true");
+
+        assert!(!keyboard_enhancement_requested());
+
+        restore_env(previous);
+    }
+
+    #[test]
+    fn keyboard_protocol_force_is_explicit_opt_in() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous = env::var("GORSEE_TUI_KEYBOARD_PROTOCOL").ok();
+        env::set_var("GORSEE_TUI_KEYBOARD_PROTOCOL", "force");
+
+        assert!(keyboard_enhancement_requested());
+
+        restore_env(previous);
+    }
+
+    fn restore_env(previous: Option<String>) {
+        match previous {
+            Some(value) => env::set_var("GORSEE_TUI_KEYBOARD_PROTOCOL", value),
+            None => env::remove_var("GORSEE_TUI_KEYBOARD_PROTOCOL"),
         }
     }
 }
