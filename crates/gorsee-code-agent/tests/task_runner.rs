@@ -64,6 +64,33 @@ fn final_answer(answer: &str) -> String {
 }
 
 #[test]
+fn final_answer_without_message_is_recorded_as_visible_agent_message() {
+    let temp = tempfile::tempdir().unwrap();
+    let agents = default_agent_matrix()
+        .into_iter()
+        .take(1)
+        .collect::<Vec<_>>();
+    let client = MockClient::new(vec![
+        json!({ "final_answer": "Привет! Чем помочь?" }).to_string()
+    ]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("привет", temp.path().display().to_string());
+
+    let summary = runner
+        .run_sequential_with_agents(&spec, &client, agents)
+        .unwrap();
+
+    let store = SessionStore::new(
+        temp.path().join(".gorsee-code"),
+        gorsee_code_safety::Redactor::default(),
+    );
+    let events = store.read_events(&summary.session_id).unwrap();
+    assert!(events.iter().any(|event| {
+        event.kind == EventKind::AgentMessage && event.payload["message"] == "Привет! Чем помочь?"
+    }));
+}
+
+#[test]
 fn sequential_runner_executes_the_full_agent_matrix() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(

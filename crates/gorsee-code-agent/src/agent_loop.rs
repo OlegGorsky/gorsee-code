@@ -117,7 +117,8 @@ fn continue_agent<C: ChatClient>(
             usage_records.push(record);
         }
         let turn = parse_response(&response)?;
-        record_message(sink, context.agent, turn.message.as_deref())?;
+        let visible_message = turn.message.as_deref().or(turn.final_answer.as_deref());
+        record_message(sink, context.agent, visible_message)?;
         if let Some(waiting) = run_tools_until_wait(
             sink,
             context.agent,

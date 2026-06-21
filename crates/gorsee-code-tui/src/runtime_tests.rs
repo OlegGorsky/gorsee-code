@@ -29,7 +29,23 @@ fn completed_submit_selects_created_session_without_fake_output() {
 
     assert_eq!(app.active_session_id(), Some("session-123"));
     assert_eq!(app.output(), None);
-    assert_eq!(app.status(), Some("сессия завершена: session-123"));
+    assert_eq!(app.status(), None);
+}
+
+#[test]
+fn invalid_model_response_is_not_dumped_into_chat() {
+    let job = thread::spawn(|| -> Result<String> {
+        Err(anyhow::anyhow!(
+            "invalid model response: invalid json: expected `,` or `}}`: {{\"message\":\"raw\"}}"
+        ))
+    });
+    let mut app = WorkspaceApp::new();
+
+    finish_joined(job, &mut app);
+
+    let output = app.output().expect("visible error");
+    assert!(output.contains("Ошибка ответа модели"));
+    assert!(!output.contains("{\"message\""));
 }
 
 #[test]

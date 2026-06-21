@@ -148,6 +148,10 @@ impl WorkspaceApp {
         self.status = Some(status.into());
     }
 
+    pub fn clear_status(&mut self) {
+        self.status = None;
+    }
+
     pub fn set_output(&mut self, output: impl Into<String>) {
         self.output = Some(output.into());
         self.center_scroll = 0;

@@ -113,7 +113,7 @@ fn summarize_event(event: &Event) -> String {
         EventKind::SessionStarted => {
             payload_text(event, "objective").unwrap_or_else(|| "новая сессия".to_string())
         }
-        EventKind::SessionFinished => "сессия завершена".into(),
+        EventKind::SessionFinished => "готово".into(),
         EventKind::SessionPaused => "сессия на паузе".into(),
         EventKind::SessionResumed => "сессия продолжена".into(),
         EventKind::AgentStarted => payload_text(event, "model")

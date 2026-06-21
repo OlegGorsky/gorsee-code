@@ -106,7 +106,7 @@ pub(crate) fn finish_joined(job: Worker, app: &mut WorkspaceApp) {
                 app.active_session_id = Some(session_id.clone());
                 app.center_panel = crate::CenterPanel::Timeline;
                 app.clear_output();
-                app.set_status(format!("сессия завершена: {session_id}"));
+                app.clear_status();
                 return;
             }
             app.set_status(compact_status(&output));
@@ -117,7 +117,7 @@ pub(crate) fn finish_joined(job: Worker, app: &mut WorkspaceApp) {
             }
         }
         Ok(Err(error)) => {
-            let message = format!("Ошибка запуска: {error}");
+            let message = display_error(&error);
             app.set_status(message.clone());
             app.set_output(message);
         }
@@ -170,6 +170,14 @@ fn compact_status(output: &str) -> String {
         .find(|line| !line.trim().is_empty())
         .map(|line| line.trim().to_string())
         .unwrap_or_else(|| "complete".into())
+}
+
+fn display_error(error: &anyhow::Error) -> String {
+    let raw = error.to_string();
+    if raw.starts_with("invalid model response:") {
+        return "Ошибка ответа модели: не удалось разобрать ответ. Попробуйте повторить запрос или сформулировать задачу подробнее.".into();
+    }
+    format!("Ошибка запуска: {raw}")
 }
 
 fn completed_session_id(output: &str) -> Option<String> {

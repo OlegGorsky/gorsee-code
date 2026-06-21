@@ -79,11 +79,59 @@ pub(crate) fn parse_response(response: &ChatResponse) -> Result<ModelTurn, Agent
 }
 
 fn parse_turn(content: &str) -> Result<ModelTurn, AgentRunError> {
-    let json = json_payload(content).ok_or_else(|| {
+    let payload = json_payload(content).ok_or_else(|| {
         AgentRunError::InvalidModelResponse("response does not contain json".into())
     })?;
-    serde_json::from_str(json)
-        .map_err(|error| AgentRunError::InvalidModelResponse(format!("{error}: {json}")))
+    parse_payload(payload)
+        .map_err(|error| AgentRunError::InvalidModelResponse(format!("invalid json: {error}")))
+}
+
+fn parse_payload(payload: &str) -> Result<ModelTurn, serde_json::Error> {
+    let mut turn = ModelTurn {
+        message: None,
+        tool_calls: Vec::new(),
+        final_answer: None,
+    };
+    for value in json_values(payload)? {
+        merge_turn(&mut turn, serde_json::from_value(value)?);
+    }
+    Ok(turn)
+}
+
+fn merge_turn(target: &mut ModelTurn, turn: ModelTurn) {
+    if turn
+        .message
+        .as_deref()
+        .map(|message| !message.trim().is_empty())
+        .unwrap_or(false)
+    {
+        target.message = turn.message;
+    }
+    target.tool_calls.extend(turn.tool_calls);
+    if turn
+        .final_answer
+        .as_deref()
+        .map(|answer| !answer.trim().is_empty())
+        .unwrap_or(false)
+    {
+        target.final_answer = turn.final_answer;
+    }
+}
+
+fn json_values(payload: &str) -> Result<Vec<Value>, serde_json::Error> {
+    let mut values = Vec::new();
+    let mut rest = payload.trim();
+    while let Some(start) = rest.find('{') {
+        let candidate = &rest[start..];
+        let mut stream = serde_json::Deserializer::from_str(candidate).into_iter::<Value>();
+        if let Some(value) = stream.next() {
+            values.push(value?);
+            rest = &candidate[stream.byte_offset()..];
+        } else {
+            break;
+        }
+    }
+    Ok(values)
 }
 
 fn extract_content(response: &ChatResponse) -> Option<String> {
@@ -107,22 +155,17 @@ fn extract_choice_content(choice: &Value) -> Option<String> {
 
 fn json_payload(content: &str) -> Option<&str> {
     let trimmed = content.trim();
-    if trimmed.starts_with("```") {
-        return fenced_json(trimmed);
-    }
-    object_slice(trimmed)
+    let payload = if trimmed.starts_with("```") {
+        fenced_json(trimmed)?
+    } else {
+        trimmed
+    };
+    payload.contains('{').then_some(payload)
 }
 
 fn fenced_json(content: &str) -> Option<&str> {
     let body = content.split_once('\n')?.1;
-    let body = body.strip_suffix("```").unwrap_or(body).trim();
-    object_slice(body)
-}
-
-fn object_slice(content: &str) -> Option<&str> {
-    let start = content.find('{')?;
-    let end = content.rfind('}')?;
-    content.get(start..=end)
+    Some(body.strip_suffix("```").unwrap_or(body).trim())
 }
 
 fn empty_args() -> Value {
@@ -155,5 +198,29 @@ mod tests {
         let turn = parse_turn("```json\n{\"message\":\"ok\"}\n```").unwrap();
 
         assert_eq!(turn.message, Some("ok".into()));
+    }
+
+    #[test]
+    fn parses_concatenated_json_turns() {
+        let turn = parse_turn(
+            r#"{"message":"уточните задачу"}{"final_answer":"Please provide more detail."}"#,
+        )
+        .unwrap();
+
+        assert_eq!(turn.message, Some("уточните задачу".into()));
+        assert_eq!(
+            turn.final_answer,
+            Some("Please provide more detail.".into())
+        );
+    }
+
+    #[test]
+    fn invalid_json_error_does_not_echo_payload() {
+        let error = parse_turn(r#"{"message": "broken""#)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("invalid model response"));
+        assert!(!error.contains("broken"));
     }
 }

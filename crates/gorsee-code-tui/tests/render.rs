@@ -830,11 +830,20 @@ fn mouse_uses_compact_sidebar_project_rows_and_completion_rows() {
         app.handle_mouse(left_click(3, 15), area, &state),
         AppIntent::None
     );
+    assert!(app
+        .project_entries()
+        .iter()
+        .any(|entry| entry.path() == Path::new("src/main.rs")));
+
+    assert_eq!(
+        app.handle_mouse(left_click(3, 16), area, &state),
+        AppIntent::None
+    );
     assert!(
         !app.project_entries()
             .iter()
             .any(|entry| entry.path() == Path::new("src/main.rs")),
-        "compact click on first project row should toggle src"
+        "click on first visible project entry should toggle src"
     );
 
     app.handle_action(KeyAction::Insert('/'), &state);

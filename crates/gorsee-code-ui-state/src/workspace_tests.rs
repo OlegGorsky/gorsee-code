@@ -156,10 +156,29 @@ fn timeline_hides_internal_events_and_labels_user_prompt() {
             event_json(4, "tool_started", Some("architect"), r#"{"name":"read"}"#),
             event_json(
                 5,
+                "tool_requested",
+                Some("architect"),
+                r#"{"name":"read_file"}"#,
+            ),
+            event_json(
+                6,
+                "tool_finished",
+                Some("architect"),
+                r#"{"name":"read_file","output":"done"}"#,
+            ),
+            event_json(
+                7,
                 "context_updated",
                 Some("architect"),
                 r#"{"answers":1,"tool_results":1}"#,
             ),
+            event_json(
+                8,
+                "artifact_created",
+                None,
+                r#"{"artifact":{"name":"report.md"}}"#,
+            ),
+            event_json(9, "session_finished", None, r#"{"status":"finished"}"#),
         ]
         .join("\n"),
     )

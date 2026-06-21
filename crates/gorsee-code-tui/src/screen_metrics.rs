@@ -1,5 +1,8 @@
 use gorsee_code_ui_state::{AgentView, WorkspaceState};
-use ratatui::text::{Line, Span};
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
 
 use crate::{screen_parts::status_style, theme};
 
@@ -24,10 +27,7 @@ pub(crate) fn agent_lines(agent: &AgentView) -> Vec<Line<'static>> {
                 theme::normal(),
             ),
         ]),
-        Line::from(vec![
-            Span::styled("    ", theme::dim()),
-            Span::styled(bar(percent, 12), status_style(&agent.status)),
-        ]),
+        bar_line("    ", percent, 12, status_style(&agent.status)),
     ]
 }
 
@@ -58,10 +58,7 @@ fn limit_numbers(label: &str, used: u64, limit: u64) -> Line<'static> {
 
 fn limit_bar(used: u64, limit: u64) -> Line<'static> {
     let percent = percent(used as f64, limit as f64);
-    Line::from(vec![
-        Span::styled("  ", theme::dim()),
-        Span::styled(bar(percent, 14), theme::accent()),
-    ])
+    bar_line("  ", percent, 14, theme::accent())
 }
 
 fn percent(used: f64, limit: f64) -> f64 {
@@ -72,10 +69,24 @@ fn percent(used: f64, limit: f64) -> f64 {
     }
 }
 
-fn bar(percent: f64, width: usize) -> String {
+fn bar_line(
+    prefix: &'static str,
+    percent: f64,
+    width: usize,
+    filled_style: Style,
+) -> Line<'static> {
+    let (filled, empty) = bar_segments(percent, width);
+    Line::from(vec![
+        Span::styled(prefix, theme::dim()),
+        Span::styled(filled, filled_style),
+        Span::styled(empty, theme::border()),
+    ])
+}
+
+fn bar_segments(percent: f64, width: usize) -> (String, String) {
     let filled = ((percent / 100.0) * width as f64).round() as usize;
     let filled = filled.min(width);
-    format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
+    ("█".repeat(filled), "·".repeat(width - filled))
 }
 
 fn title(value: &str) -> String {
@@ -83,5 +94,26 @@ fn title(value: &str) -> String {
     match chars.next() {
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tiny_percent_does_not_render_as_full_bar() {
+        let (filled, empty) = bar_segments(1.0, 12);
+
+        assert!(filled.chars().count() <= 1);
+        assert!(empty.chars().count() >= 11);
+    }
+
+    #[test]
+    fn full_percent_renders_full_bar() {
+        let (filled, empty) = bar_segments(100.0, 12);
+
+        assert_eq!(filled.chars().count(), 12);
+        assert!(empty.is_empty());
     }
 }

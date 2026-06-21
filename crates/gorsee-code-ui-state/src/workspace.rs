@@ -169,9 +169,13 @@ fn event_views(events: Vec<Event>) -> Vec<EventView> {
 }
 
 fn visible_event(kind: &EventKind) -> bool {
-    !matches!(
+    matches!(
         kind,
-        EventKind::AgentThinking | EventKind::ContextUpdated | EventKind::ToolStarted
+        EventKind::SessionStarted
+            | EventKind::AgentMessage
+            | EventKind::BudgetWarning
+            | EventKind::BudgetExceeded
+            | EventKind::Error
     )
 }
 

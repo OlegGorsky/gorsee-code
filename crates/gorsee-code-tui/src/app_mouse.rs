@@ -22,7 +22,7 @@ impl WorkspaceApp {
             .and_then(|index| {
                 index
                     .checked_sub(self.project.scroll())
-                    .map(|visible| project_entry_line() + visible as u16 + 1)
+                    .map(|visible| first_project_entry_row() + visible as u16)
             })
     }
 
@@ -187,7 +187,7 @@ impl WorkspaceApp {
     }
 
     fn handle_project_mouse(&mut self, row: u16, left: Rect) {
-        let first_row = left.y + project_entry_line() + 1;
+        let first_row = left.y + first_project_entry_row();
         if row < first_row {
             return;
         }
@@ -236,4 +236,8 @@ impl WorkspaceApp {
 
 fn project_entry_line() -> u16 {
     14
+}
+
+fn first_project_entry_row() -> u16 {
+    project_entry_line() + 2
 }
