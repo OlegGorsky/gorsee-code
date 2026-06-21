@@ -9,7 +9,9 @@ use ratatui::{
 use crate::{screen_parts::panel_block, theme};
 
 pub(crate) fn render_footer(frame: &mut Frame<'_>, area: Rect) {
-    let line = if area.width < 136 {
+    let line = if area.width < 96 {
+        narrow_footer_line()
+    } else if area.width < 136 {
         compact_footer_line()
     } else {
         full_footer_line()
@@ -54,6 +56,20 @@ fn compact_footer_line() -> Line<'static> {
         Span::raw(" фокус   "),
         Span::styled("[q]", theme::accent()),
         Span::raw(" выход   "),
+        Span::styled("Neurogate", theme::cyan().add_modifier(Modifier::BOLD)),
+    ])
+}
+
+fn narrow_footer_line() -> Line<'static> {
+    Line::from(vec![
+        Span::styled("[Enter]", theme::accent()),
+        Span::raw(" старт  "),
+        Span::styled("[/]", theme::accent()),
+        Span::raw(" меню  "),
+        Span::styled("[Ctrl+J]", theme::accent()),
+        Span::raw(" строка  "),
+        Span::styled("[q]", theme::accent()),
+        Span::raw(" выход  "),
         Span::styled("Neurogate", theme::cyan().add_modifier(Modifier::BOLD)),
     ])
 }
