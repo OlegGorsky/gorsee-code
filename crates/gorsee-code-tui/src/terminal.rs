@@ -7,10 +7,11 @@ use anyhow::Result;
 use crossterm::{
     cursor::{Hide, Show},
     event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
+    style::Print,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -18,6 +19,8 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 pub type TuiTerminal = Terminal<CrosstermBackend<io::Stdout>>;
 
 static KEYBOARD_ENHANCEMENT_ENABLED: AtomicBool = AtomicBool::new(false);
+const ENABLE_MOUSE_CAPTURE: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1015l\x1b[?1003l";
 
 pub fn setup_terminal() -> Result<TuiTerminal> {
     let keyboard_enhancement = keyboard_enhancement_requested();
@@ -34,7 +37,7 @@ pub fn setup_terminal() -> Result<TuiTerminal> {
         stdout,
         EnterAlternateScreen,
         Hide,
-        EnableMouseCapture,
+        Print(ENABLE_MOUSE_CAPTURE),
         EnableBracketedPaste
     )?;
     let backend = CrosstermBackend::new(stdout);
@@ -55,7 +58,7 @@ pub fn restore_terminal(terminal: &mut TuiTerminal) -> Result<()> {
         &mut first_error,
         execute!(
             terminal.backend_mut(),
-            DisableMouseCapture,
+            Print(DISABLE_MOUSE_CAPTURE),
             DisableBracketedPaste,
             Show,
             LeaveAlternateScreen
@@ -112,6 +115,15 @@ mod tests {
         assert!(keyboard_enhancement_requested());
 
         restore_env(previous);
+    }
+
+    #[test]
+    fn mouse_capture_uses_sgr_button_mode_without_all_motion() {
+        assert!(ENABLE_MOUSE_CAPTURE.contains("?1000h"));
+        assert!(ENABLE_MOUSE_CAPTURE.contains("?1002h"));
+        assert!(ENABLE_MOUSE_CAPTURE.contains("?1006h"));
+        assert!(!ENABLE_MOUSE_CAPTURE.contains("?1003h"));
+        assert!(!ENABLE_MOUSE_CAPTURE.contains("?1015h"));
     }
 
     fn restore_env(previous: Option<String>) {
