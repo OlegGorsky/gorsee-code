@@ -45,8 +45,8 @@ fn ready_state(root: &Path) -> WorkspaceState {
             repo: root.display().to_string(),
             branch: current_branch(root),
         },
-        agents: agent_views(root, "ready", 0, None),
-        timeline: vec![ready_event()],
+        agents: Vec::new(),
+        timeline: Vec::new(),
         budget: budget_view(0, config_for(root).budget.session_tokens),
         approvals: Vec::new(),
         gateway_status: "local".into(),
@@ -73,7 +73,13 @@ fn session_state(
             repo: repo_label(root, &manifest),
             branch: branch_label(root, &manifest),
         },
-        agents: agent_views(root, &manifest.status, used_tokens, ledger.as_ref()),
+        agents: agent_views(
+            root,
+            &manifest.status,
+            used_tokens,
+            ledger.as_ref(),
+            Some(&manifest.agents),
+        ),
         timeline: event_views(events),
         budget: budget_view(used_tokens, manifest.budget.tokens_limit),
         approvals: approval_views(approvals),
@@ -154,9 +160,6 @@ fn read_approvals(session_dir: &Path) -> Vec<ApprovalRecord> {
 }
 
 fn event_views(events: Vec<Event>) -> Vec<EventView> {
-    if events.is_empty() {
-        return vec![ready_event()];
-    }
     events
         .iter()
         .filter(|event| visible_event(&event.kind))
@@ -197,15 +200,6 @@ fn legacy_workspace_word() -> String {
     ['s', 'c', 'a', 'f', 'f', 'o', 'l', 'd']
         .into_iter()
         .collect()
-}
-
-fn ready_event() -> EventView {
-    EventView {
-        sequence: 1,
-        kind: "workspace_ready".into(),
-        agent_id: None,
-        summary: "workspace ready".into(),
-    }
 }
 
 fn repo_label(root: &Path, manifest: &SessionManifest) -> String {

@@ -184,7 +184,7 @@ fn ratatui_render_surfaces_approvals_and_command_output() {
 }
 
 #[test]
-fn right_panel_surfaces_agent_context_limits_and_thinking_state() {
+fn right_panel_surfaces_agent_context_and_limits() {
     let mut terminal = Terminal::new(TestBackend::new(140, 42)).expect("terminal");
     let mut app = WorkspaceApp::new();
     app.set_status("running");
@@ -199,7 +199,22 @@ fn right_panel_surfaces_agent_context_limits_and_thinking_state() {
     assert!(first.contains("Лимиты"));
     assert!(first.contains("live-окна"));
     assert!(first.contains("/limits"));
+}
+
+#[test]
+fn running_indicator_stays_in_timeline_not_context_panel() {
+    let mut terminal = Terminal::new(TestBackend::new(140, 42)).expect("terminal");
+    let mut app = WorkspaceApp::new();
+    app.set_status("running");
+
+    terminal
+        .draw(|frame| render_frame(frame, &workspace_running(), &app))
+        .expect("render");
+
+    let first = buffer_text(terminal.backend().buffer());
+    let first_context = right_panel_text(terminal.backend().buffer());
     assert!(first.contains("думаю..."));
+    assert!(!first_context.contains("думаю..."), "{first_context}");
 
     app.advance_spinner();
     terminal
@@ -278,6 +293,44 @@ fn project_panel_changes_working_folder_from_center() {
         app.working_folder().expect("working folder"),
         project.path().parent().expect("temp parent")
     );
+}
+
+#[test]
+fn project_panel_input_path_item_prefills_composer() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    assert_eq!(submit_line(&mut app, "/project", &state), AppIntent::None);
+    app.handle_action(KeyAction::MoveSelectionDown, &state);
+
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+
+    assert_eq!(app.input(), "/project ");
+    assert_eq!(app.input_cursor(), "/project ".len());
+    assert_eq!(app.status(), Some("введите путь проекта"));
+}
+
+#[test]
+fn project_panel_current_project_item_is_selectable() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    assert_eq!(submit_line(&mut app, "/project", &state), AppIntent::None);
+
+    assert_eq!(
+        app.handle_action(KeyAction::Submit, &state),
+        AppIntent::None
+    );
+
+    assert_eq!(app.working_folder(), Some(project.path()));
+    assert_eq!(app.center_panel(), CenterPanel::Project);
 }
 
 #[test]
@@ -1419,6 +1472,20 @@ fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
     let mut output = String::new();
     for y in area.top()..area.bottom() {
         for x in area.left()..area.right() {
+            output.push_str(buffer[(x, y)].symbol());
+        }
+        output.push('\n');
+    }
+    output
+}
+
+fn right_panel_text(buffer: &ratatui::buffer::Buffer) -> String {
+    let area = buffer.area;
+    let start = area.right().saturating_sub(32);
+    let main_bottom = area.bottom().saturating_sub(6);
+    let mut output = String::new();
+    for y in area.top()..main_bottom {
+        for x in start..area.right() {
             output.push_str(buffer[(x, y)].symbol());
         }
         output.push('\n');

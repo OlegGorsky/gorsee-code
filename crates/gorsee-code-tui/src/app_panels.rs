@@ -128,6 +128,10 @@ fn select_project_item(app: &mut WorkspaceApp) -> Option<AppIntent> {
                 app.open_project_panel();
             }
         }
+        PanelItemTarget::None if item.label() == "Ввести путь" => {
+            app.restore_prompt("/project ".into());
+            app.set_status("введите путь проекта");
+        }
         _ => app.set_status("путь: введите /project <путь>"),
     }
     Some(AppIntent::None)

@@ -69,7 +69,7 @@ pub(crate) fn project_items(root: &Path) -> Vec<PanelItem> {
         PanelItem::new(
             "Текущий проект",
             root.display().to_string(),
-            PanelItemTarget::None,
+            PanelItemTarget::ProjectPath(root.to_path_buf()),
         ),
         PanelItem::new("Ввести путь", "/project <путь>", PanelItemTarget::None),
     ];

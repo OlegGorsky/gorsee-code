@@ -11,6 +11,7 @@ pub(super) fn agent_views(
     status: &str,
     _used_tokens: u64,
     ledger: Option<&TokenLedger>,
+    active_ids: Option<&[String]>,
 ) -> Vec<AgentView> {
     let config = config_for(root);
     let by_agent = ledger.map(TokenLedger::by_agent).unwrap_or_default();
@@ -18,7 +19,9 @@ pub(super) fn agent_views(
         .into_iter()
         .map(|profile| profile.id().to_string())
         .collect::<Vec<_>>();
-    let ordered = ordered_agent_ids(&default_ids, &config.agents);
+    let ordered = active_ids
+        .map(|ids| session_agent_ids(ids, &config.agents))
+        .unwrap_or_else(|| ordered_agent_ids(&default_ids, &config.agents));
     ordered
         .iter()
         .enumerate()
@@ -33,6 +36,18 @@ pub(super) fn agent_views(
                 profile.budget_tokens,
             ))
         })
+        .collect()
+}
+
+fn session_agent_ids(
+    ids: &[String],
+    agents: &BTreeMap<String, gorsee_code_config::AgentConfig>,
+) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    ids.iter()
+        .filter(|id| agents.contains_key(*id))
+        .filter(|id| seen.insert((*id).clone()))
+        .cloned()
         .collect()
 }
 

@@ -9,7 +9,8 @@ fn empty_workspace_is_ready() {
     assert_eq!(state.session.title, "Gorsee Code Workspace");
     assert_eq!(state.session.status, "ready");
     assert_eq!(state.budget.used_tokens, 0);
-    assert_eq!(state.timeline[0].kind, "workspace_ready");
+    assert!(state.agents.is_empty());
+    assert!(state.timeline.is_empty());
 }
 
 #[test]
@@ -21,7 +22,7 @@ fn default_workspace_state_does_not_auto_open_latest_session() {
 
     assert_eq!(state.session.id, "workspace");
     assert_eq!(state.session.status, "ready");
-    assert_eq!(state.timeline[0].kind, "workspace_ready");
+    assert!(state.timeline.is_empty());
 }
 
 #[test]
@@ -39,11 +40,12 @@ fn workspace_state_can_load_requested_session() {
 #[test]
 fn workspace_state_uses_project_configured_agent_models() {
     let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "configured", "2026-06-20T01:00:00Z", "running");
     let mut config = gorsee_code_config::default_config("configured");
     config.agents.get_mut("architect").unwrap().model = "kimi-k2.6".into();
     config.save(temp.path().join("gorsee-code.toml")).unwrap();
 
-    let state = workspace_state(temp.path());
+    let state = workspace_state_for_session(temp.path(), Some("configured"));
 
     let architect = state
         .agents
@@ -54,9 +56,32 @@ fn workspace_state_uses_project_configured_agent_models() {
 }
 
 #[test]
+fn workspace_state_shows_only_session_manifest_agents() {
+    let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "single", "2026-06-20T01:00:00Z", "running");
+
+    let state = workspace_state_for_session(temp.path(), Some("single"));
+
+    assert_eq!(
+        state
+            .agents
+            .iter()
+            .map(|agent| agent.id.as_str())
+            .collect::<Vec<_>>(),
+        ["architect"]
+    );
+}
+
+#[test]
 fn workspace_state_uses_token_ledger_by_agent() {
     let temp = tempfile::tempdir().unwrap();
-    write_session(temp.path(), "ledger", "2026-06-20T01:00:00Z", "finished");
+    write_session_with_agents(
+        temp.path(),
+        "ledger",
+        "2026-06-20T01:00:00Z",
+        "finished",
+        &["architect", "coder"],
+    );
     fs::write(
         temp.path()
             .join(".gorsee-code/sessions/ledger/token-ledger.json"),
@@ -151,8 +176,23 @@ fn timeline_hides_internal_events_and_labels_user_prompt() {
 }
 
 fn write_session(root: &Path, id: &str, started_at: &str, status: &str) {
+    write_session_with_agents(root, id, started_at, status, &["architect"]);
+}
+
+fn write_session_with_agents(
+    root: &Path,
+    id: &str,
+    started_at: &str,
+    status: &str,
+    agents: &[&str],
+) {
     let session = root.join(".gorsee-code/sessions").join(id);
     fs::create_dir_all(&session).unwrap();
+    let agents = agents
+        .iter()
+        .map(|agent| format!(r#""{agent}""#))
+        .collect::<Vec<_>>()
+        .join(", ");
     fs::write(
         session.join("manifest.json"),
         format!(
@@ -162,7 +202,7 @@ fn write_session(root: &Path, id: &str, started_at: &str, status: &str) {
   "branch": "main",
   "started_at": "{started_at}",
   "status": "{status}",
-  "agents": ["architect"],
+  "agents": [{agents}],
   "budget": {{"tokens_limit": 80000, "tokens_used": 0}}
 }}"#,
             root.display()
