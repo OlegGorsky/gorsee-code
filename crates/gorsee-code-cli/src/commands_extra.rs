@@ -308,17 +308,16 @@ fn model_accepts_chat(
     if let Some(usable) = health.get(model) {
         return Ok(*usable);
     }
-    let request = ChatRequest {
-        model: model.to_string(),
-        stream: false,
-        messages: vec![
+    let request = ChatRequest::new(
+        model,
+        vec![
             ChatMessage {
                 role: "system".into(),
                 content: "Reply with OK only.".into(),
             },
             ChatMessage::user("OK"),
         ],
-    };
+    );
     let usable = match live::block_on(async {
         Ok::<_, anyhow::Error>(client.chat_completion(&request).await)
     })? {

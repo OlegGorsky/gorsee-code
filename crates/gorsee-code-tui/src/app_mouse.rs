@@ -40,20 +40,33 @@ impl WorkspaceApp {
                 if let Some(intent) =
                     self.handle_center_click(mouse.column, mouse.row, layout.center)
                 {
+                    self.mouse_down_consumed = true;
                     return intent;
                 }
                 if contains(layout.center, mouse.column, mouse.row) {
+                    self.mouse_down_consumed = false;
                     self.selection_anchor = Some((mouse.column, mouse.row));
                     self.selection_cursor = Some((mouse.column, mouse.row));
                     self.selection_range = None;
                 } else {
+                    self.mouse_down_consumed = false;
                     self.selection_anchor = None;
                     self.selection_cursor = None;
                     self.selection_range = None;
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                return self.handle_drag_copy(mouse, layout.center, state);
+                if std::mem::take(&mut self.mouse_down_consumed) {
+                    return AppIntent::None;
+                }
+                if self.selection_anchor.is_some() {
+                    return self.handle_drag_copy(mouse, layout.center, state);
+                }
+                if let Some(intent) =
+                    self.handle_center_click(mouse.column, mouse.row, layout.center)
+                {
+                    return intent;
+                }
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 if self.selection_anchor.is_some()
@@ -65,8 +78,10 @@ impl WorkspaceApp {
             _ => return AppIntent::None,
         }
         if contains(layout.left, mouse.column, mouse.row) {
+            self.remember_left_down(mouse.kind);
             return self.handle_sidebar_mouse(mouse.row, layout.left, state);
         } else if contains(layout.composer, mouse.column, mouse.row) {
+            self.remember_left_down(mouse.kind);
             if self.handle_completion_mouse(mouse.row, layout.composer) {
                 return AppIntent::None;
             }
@@ -231,6 +246,10 @@ impl WorkspaceApp {
         let y = row.saturating_sub(composer.y + 1) as usize;
         self.input_cursor = cursor_for_position(&self.input, y, x);
         self.refresh_completion();
+    }
+
+    fn remember_left_down(&mut self, kind: MouseEventKind) {
+        self.mouse_down_consumed = matches!(kind, MouseEventKind::Down(MouseButton::Left));
     }
 }
 

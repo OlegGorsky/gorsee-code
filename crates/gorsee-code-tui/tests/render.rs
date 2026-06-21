@@ -781,6 +781,30 @@ fn completion_arrows_and_enter_select_commands_and_files() {
 }
 
 #[test]
+fn completion_menus_follow_terminal_arrow_keys() {
+    let project = temp_project();
+    let state = workspace_running();
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    app.handle_action(KeyAction::Insert('/'), &state);
+    assert_eq!(app.completion_kind(), Some(CompletionKind::Commands));
+
+    let down = action_for_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), false);
+    let up = action_for_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), false);
+    app.handle_action(down, &state);
+    assert_eq!(app.completion_selected(), 1);
+    app.handle_action(up, &state);
+    assert_eq!(app.completion_selected(), 0);
+
+    app.handle_action(KeyAction::Backspace, &state);
+    app.handle_action(KeyAction::Insert('@'), &state);
+    assert_eq!(app.completion_kind(), Some(CompletionKind::Files));
+    app.handle_action(down, &state);
+    assert_eq!(app.completion_selected(), 1);
+}
+
+#[test]
 fn app_supports_mouse_project_open_and_composer_cursor_placement() {
     let project = temp_project();
     let state = workspace_running();
@@ -872,6 +896,67 @@ fn mouse_sidebar_menu_items_are_actionable() {
     );
     assert_eq!(app.center_panel(), CenterPanel::Timeline);
     assert_eq!(app.output(), None);
+}
+
+#[test]
+fn mouse_sidebar_menu_items_work_on_release() {
+    let state = workspace_running();
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let mut app = WorkspaceApp::new();
+
+    assert_eq!(
+        app.handle_mouse(left_release(4, 4), area, &state),
+        AppIntent::Command("diff".into())
+    );
+    assert_eq!(app.center_panel(), CenterPanel::Diff);
+}
+
+#[test]
+fn mouse_release_does_not_repeat_consumed_mouse_down() {
+    let state = workspace_running();
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let mut app = WorkspaceApp::new();
+
+    assert_eq!(
+        app.handle_mouse(left_click(4, 4), area, &state),
+        AppIntent::Command("diff".into())
+    );
+    assert_eq!(
+        app.handle_mouse(left_release(4, 4), area, &state),
+        AppIntent::None
+    );
+}
+
+#[test]
+fn mouse_project_release_does_not_toggle_after_mouse_down() {
+    let project = temp_project();
+    let state = workspace_running();
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let mut app = WorkspaceApp::new();
+
+    app.sync_project_root(project.path()).expect("scan project");
+    assert!(app
+        .project_entries()
+        .iter()
+        .any(|entry| entry.path() == Path::new("src/main.rs")));
+
+    assert_eq!(
+        app.handle_mouse(left_click(3, 16), area, &state),
+        AppIntent::None
+    );
+    assert!(!app
+        .project_entries()
+        .iter()
+        .any(|entry| entry.path() == Path::new("src/main.rs")));
+
+    assert_eq!(
+        app.handle_mouse(left_release(3, 16), area, &state),
+        AppIntent::None
+    );
+    assert!(!app
+        .project_entries()
+        .iter()
+        .any(|entry| entry.path() == Path::new("src/main.rs")));
 }
 
 #[test]

@@ -21,6 +21,32 @@ pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
     pub stream: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_retention: Option<String>,
+}
+
+impl ChatRequest {
+    pub fn new(model: impl Into<String>, messages: Vec<ChatMessage>) -> Self {
+        Self {
+            model: model.into(),
+            messages,
+            stream: false,
+            prompt_cache_key: None,
+            prompt_cache_retention: None,
+        }
+    }
+
+    pub fn with_prompt_cache_key(mut self, key: impl Into<String>) -> Self {
+        self.prompt_cache_key = Some(key.into());
+        self
+    }
+
+    pub fn with_prompt_cache_retention(mut self, retention: impl Into<String>) -> Self {
+        self.prompt_cache_retention = Some(retention.into());
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,5 +87,25 @@ mod tests {
 
         assert_eq!(chunk.data["choices"][0]["delta"]["content"], "hi");
         assert_eq!(parse_stream_line("data: [DONE]").unwrap(), None);
+    }
+
+    #[test]
+    fn omits_prompt_cache_fields_by_default() {
+        let request = ChatRequest::new("glm-5.1", vec![ChatMessage::user("hi")]);
+        let payload = serde_json::to_value(request).unwrap();
+
+        assert!(payload.get("prompt_cache_key").is_none());
+        assert!(payload.get("prompt_cache_retention").is_none());
+    }
+
+    #[test]
+    fn serializes_prompt_cache_hints_when_enabled() {
+        let request = ChatRequest::new("glm-5.1", vec![ChatMessage::user("hi")])
+            .with_prompt_cache_key("gorsee:agent:v1:test")
+            .with_prompt_cache_retention("24h");
+        let payload = serde_json::to_value(request).unwrap();
+
+        assert_eq!(payload["prompt_cache_key"], "gorsee:agent:v1:test");
+        assert_eq!(payload["prompt_cache_retention"], "24h");
     }
 }

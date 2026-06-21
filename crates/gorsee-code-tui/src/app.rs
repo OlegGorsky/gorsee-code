@@ -38,6 +38,7 @@ pub struct WorkspaceApp {
     pub(crate) selection_anchor: Option<(u16, u16)>,
     pub(crate) selection_cursor: Option<(u16, u16)>,
     pub(crate) selection_range: Option<((u16, u16), (u16, u16))>,
+    pub(crate) mouse_down_consumed: bool,
     pub(crate) center_scroll: usize,
     pub(crate) confirm_close_editor: bool,
     pub(crate) pending_restore_input: Option<String>,

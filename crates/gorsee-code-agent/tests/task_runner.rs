@@ -91,6 +91,154 @@ fn final_answer_without_message_is_recorded_as_visible_agent_message() {
 }
 
 #[test]
+fn final_answer_is_the_only_visible_agent_message() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"sample\"\n",
+    )
+    .unwrap();
+    let agents = default_agent_matrix()
+        .into_iter()
+        .take(1)
+        .collect::<Vec<_>>();
+    let client = MockClient::new(vec![
+        json!({
+            "message": "технический ход: смотрю файлы",
+            "tool_calls": [{ "name": "list_files", "args": {} }]
+        })
+        .to_string(),
+        json!({
+            "message": "технический ход: готовлю ответ",
+            "final_answer": "Готово, отвечаю нормально."
+        })
+        .to_string(),
+    ]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("проверь проект", temp.path().display().to_string());
+
+    let summary = runner
+        .run_sequential_with_agents(&spec, &client, agents)
+        .unwrap();
+
+    let store = SessionStore::new(
+        temp.path().join(".gorsee-code"),
+        gorsee_code_safety::Redactor::default(),
+    );
+    let messages = store
+        .read_events(&summary.session_id)
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == EventKind::AgentMessage)
+        .map(|event| event.payload["message"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(messages, ["Готово, отвечаю нормально."]);
+}
+
+#[test]
+fn agent_without_tools_receives_no_tool_manifests() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"sample\"\n",
+    )
+    .unwrap();
+    let mut agent = default_agent_matrix().remove(0);
+    agent.tools.clear();
+    let client = MockClient::new(vec![final_answer("Привет!")]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("Привет", temp.path().display().to_string());
+
+    runner
+        .run_sequential_with_agents(&spec, &client, vec![agent])
+        .unwrap();
+
+    let requests = client.requests.borrow();
+    assert!(requests[0].messages[0]
+        .content
+        .contains("lightweight chat mode"));
+    assert!(requests[0]
+        .prompt_cache_key
+        .as_deref()
+        .is_some_and(|key| key.starts_with("gorsee:chat:v1:")));
+    assert_eq!(requests[0].messages[1].content, "Привет");
+    assert!(!requests[0].messages[1].content.contains("available_tools"));
+}
+
+#[test]
+fn agent_prompt_only_includes_allowed_tool_manifests() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"sample\"\n",
+    )
+    .unwrap();
+    let agent = default_agent_matrix().remove(0);
+    let client = MockClient::new(vec![final_answer("готово")]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("посмотри проект", temp.path().display().to_string());
+
+    runner
+        .run_sequential_with_agents(&spec, &client, vec![agent])
+        .unwrap();
+
+    let requests = client.requests.borrow();
+    let prompt = user_prompt_json(&requests[0]);
+    let names = available_tool_names(&prompt);
+    assert!(names.contains(&"list_files".to_string()));
+    assert!(names.contains(&"read_file".to_string()));
+    assert!(names.contains(&"search_text".to_string()));
+    assert!(names.contains(&"repo_map".to_string()));
+    assert!(!names.contains(&"apply_patch".to_string()));
+    assert!(!names.contains(&"run_test".to_string()));
+}
+
+#[test]
+fn agent_prompt_uses_stable_cache_prefix_before_dynamic_work() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"sample\"\n",
+    )
+    .unwrap();
+    let agent = default_agent_matrix().remove(0);
+    let client = MockClient::new(vec![final_answer("one"), final_answer("two")]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+
+    runner
+        .run_sequential_with_agents(
+            &TaskSpec::new("первая задача", temp.path().display().to_string()),
+            &client,
+            vec![agent.clone()],
+        )
+        .unwrap();
+    runner
+        .run_sequential_with_agents(
+            &TaskSpec::new("вторая задача", temp.path().display().to_string()),
+            &client,
+            vec![agent],
+        )
+        .unwrap();
+
+    let requests = client.requests.borrow();
+    assert_eq!(requests[0].messages.len(), 3);
+    assert_eq!(requests[0].prompt_cache_key, requests[1].prompt_cache_key);
+    assert!(requests[0]
+        .prompt_cache_key
+        .as_deref()
+        .is_some_and(|key| key.starts_with("gorsee:agent:v1:")));
+
+    let static_context = user_prompt_json(&requests[0]);
+    let first_work = work_prompt_json(&requests[0]);
+    let second_work = work_prompt_json(&requests[1]);
+
+    assert!(static_context.get("available_tools").is_some());
+    assert!(static_context.get("objective").is_none());
+    assert_eq!(first_work["objective"], "первая задача");
+    assert_eq!(second_work["objective"], "вторая задача");
+}
+
+#[test]
 fn sequential_runner_executes_the_full_agent_matrix() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(
@@ -264,6 +412,23 @@ fn artifact_json(artifacts: &[gorsee_code_artifacts::ArtifactRecord], name: &str
         })
         .unwrap_or_else(|| panic!("missing {name}"));
     serde_json::from_str(&fs::read_to_string(&artifact.path).unwrap()).unwrap()
+}
+
+fn user_prompt_json(request: &ChatRequest) -> Value {
+    serde_json::from_str(&request.messages[1].content).unwrap()
+}
+
+fn work_prompt_json(request: &ChatRequest) -> Value {
+    serde_json::from_str(&request.messages[2].content).unwrap()
+}
+
+fn available_tool_names(prompt: &Value) -> Vec<String> {
+    prompt["available_tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap().to_string())
+        .collect()
 }
 
 #[derive(Debug, Clone)]

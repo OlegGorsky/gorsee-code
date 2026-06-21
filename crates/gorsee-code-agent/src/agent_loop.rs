@@ -1,6 +1,6 @@
 use gorsee_code_core::{AgentProfile, EventKind, TaskSpec};
 use gorsee_code_session::ApprovalDecision;
-use gorsee_code_tool_runtime::ToolRegistry;
+use gorsee_code_tool_runtime::{ToolManifest, ToolRegistry};
 use gorsee_code_usage::UsageRecord;
 use serde_json::json;
 
@@ -88,6 +88,7 @@ pub(crate) fn resume_agent<C: ChatClient>(
         return Ok(AgentOutcome::Waiting(waiting));
     }
     if let Some(answer) = pending.final_answer {
+        record_message(sink, context.agent, Some(&answer))?;
         return Ok(finished(context.agent, answer, tool_results, usage_records));
     }
     continue_agent(context, sink, pending.step + 1, tool_results, usage_records)
@@ -101,7 +102,7 @@ fn continue_agent<C: ChatClient>(
     mut usage_records: Vec<UsageRecord>,
 ) -> Result<AgentOutcome, AgentRunError> {
     for step in first_step..=MAX_STEPS {
-        let manifests = context.registry.manifests();
+        let manifests = allowed_manifests(context.agent, context.registry);
         let request = crate::prompts::request(PromptContext {
             profile: context.agent,
             spec: context.spec,
@@ -117,8 +118,6 @@ fn continue_agent<C: ChatClient>(
             usage_records.push(record);
         }
         let turn = parse_response(&response)?;
-        let visible_message = turn.message.as_deref().or(turn.final_answer.as_deref());
-        record_message(sink, context.agent, visible_message)?;
         if let Some(waiting) = run_tools_until_wait(
             sink,
             context.agent,
@@ -134,6 +133,7 @@ fn continue_agent<C: ChatClient>(
             return Ok(AgentOutcome::Waiting(waiting));
         }
         if let Some(answer) = turn.final_answer {
+            record_message(sink, context.agent, Some(&answer))?;
             return Ok(finished(context.agent, answer, tool_results, usage_records));
         }
     }
@@ -153,6 +153,39 @@ fn finished(
         answer: AgentAnswer::new(agent.id(), answer),
         tool_results,
         usage_records,
+    }
+}
+
+fn allowed_manifests(agent: &AgentProfile, registry: &ToolRegistry) -> Vec<ToolManifest> {
+    if agent.tools.is_empty() {
+        return Vec::new();
+    }
+    registry
+        .manifests()
+        .into_iter()
+        .filter(|manifest| agent.tools.iter().any(|tool| tool_matches(tool, manifest)))
+        .collect()
+}
+
+fn tool_matches(tool: &str, manifest: &ToolManifest) -> bool {
+    manifest.name == tool
+        || manifest.capabilities.iter().any(|capability| {
+            capability == tool || grouped_tool_matches(tool, &manifest.name, capability)
+        })
+}
+
+fn grouped_tool_matches(tool: &str, name: &str, capability: &str) -> bool {
+    match tool {
+        "read" => matches!(
+            capability,
+            "files:list" | "files:read" | "git:status" | "git:recent"
+        ),
+        "search" => capability == "files:search",
+        "repo_map" => capability == "context:repo_map",
+        "diff" => capability == "git:diff",
+        "propose_patch" => matches!(name, "propose_patch" | "apply_patch"),
+        "run_test" => capability == "tests:run",
+        _ => false,
     }
 }
 

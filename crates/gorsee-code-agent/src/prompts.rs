@@ -17,17 +17,54 @@ pub(crate) struct PromptContext<'a> {
 }
 
 pub(crate) fn request(context: PromptContext<'_>) -> ChatRequest {
-    ChatRequest {
-        model: context.profile.model.clone(),
-        stream: false,
-        messages: vec![
+    if lightweight_chat(&context) {
+        return lightweight_chat_request(&context);
+    }
+
+    ChatRequest::new(
+        context.profile.model.clone(),
+        vec![
             ChatMessage {
                 role: "system".into(),
                 content: system_prompt(),
             },
-            ChatMessage::user(user_prompt(&context)),
+            ChatMessage::user(static_context_prompt(&context)),
+            ChatMessage::user(work_prompt(&context)),
         ],
-    }
+    )
+    .with_prompt_cache_key(prompt_cache_key(&context, "agent"))
+}
+
+fn lightweight_chat(context: &PromptContext<'_>) -> bool {
+    context.profile.tools.is_empty()
+        && context.tools.is_empty()
+        && context.skill_id.is_none()
+        && context.previous_answers.is_empty()
+        && context.previous_tool_results.is_empty()
+        && context.results.is_empty()
+}
+
+fn lightweight_chat_request(context: &PromptContext<'_>) -> ChatRequest {
+    ChatRequest::new(
+        context.profile.model.clone(),
+        vec![
+            ChatMessage {
+                role: "system".into(),
+                content: lightweight_system_prompt(),
+            },
+            ChatMessage::user(context.spec.objective.clone()),
+        ],
+    )
+    .with_prompt_cache_key(prompt_cache_key(context, "chat"))
+}
+
+fn lightweight_system_prompt() -> String {
+    [
+        "You are Gorsee Code in lightweight chat mode.",
+        "Answer briefly and naturally in Russian unless the user uses another language.",
+        "Return only JSON: {\"final_answer\":\"...\"}.",
+    ]
+    .join(" ")
 }
 
 fn system_prompt() -> String {
@@ -42,7 +79,7 @@ fn system_prompt() -> String {
     .join(" ")
 }
 
-fn user_prompt(context: &PromptContext<'_>) -> String {
+fn static_context_prompt(context: &PromptContext<'_>) -> String {
     json!({
         "agent": {
             "id": context.profile.id(),
@@ -51,15 +88,45 @@ fn user_prompt(context: &PromptContext<'_>) -> String {
             "tools": context.profile.tools,
             "budget_tokens": context.profile.budget_tokens
         },
-        "objective": context.spec.objective,
         "repo_path": context.spec.repo_path,
         "skill": context.skill_id,
         "budget_tokens": context.spec.budget_tokens,
-        "step": context.step,
         "available_tools": context.tools,
+    })
+    .to_string()
+}
+
+fn work_prompt(context: &PromptContext<'_>) -> String {
+    json!({
+        "objective": context.spec.objective,
+        "step": context.step,
         "previous_agents": context.previous_answers,
         "previous_tool_results": context.previous_tool_results,
         "tool_results": context.results,
     })
     .to_string()
+}
+
+fn prompt_cache_key(context: &PromptContext<'_>, mode: &str) -> String {
+    let material = json!({
+        "agent_id": context.profile.id(),
+        "model": context.profile.model,
+        "reasoning": context.profile.reasoning,
+        "repo_path": context.spec.repo_path,
+        "skill": context.skill_id,
+        "tools": context.profile.tools,
+        "available_tools": context.tools,
+        "mode": mode,
+    })
+    .to_string();
+    format!("gorsee:{mode}:v1:{}", short_hash(&material))
+}
+
+fn short_hash(input: &str) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in input.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
