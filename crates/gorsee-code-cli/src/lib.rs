@@ -11,6 +11,7 @@ mod interactive;
 mod limit_commands;
 mod live;
 mod model_commands;
+mod mouse_debug;
 mod paths;
 mod project_commands;
 mod protection_commands;

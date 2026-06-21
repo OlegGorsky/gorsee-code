@@ -32,6 +32,7 @@ pub enum Command {
     Replay(SessionIdArgs),
     Export(SessionIdArgs),
     Gateway(GatewayArgs),
+    MouseDebug,
     Tui,
     Skills(SkillsArgs),
     Agents,

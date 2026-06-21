@@ -17,9 +17,9 @@ use crate::{
     args::{
         AuthCommand, BudgetCommand, Cli, Command, SessionIdArgs, SessionsCommand, SkillsCommand,
     },
-    auth, budget_commands, checkpoint_commands, limit_commands, live, model_commands, paths,
-    project_commands, protection_commands, route_commands, session_commands, uninstall_commands,
-    CliOptions,
+    auth, budget_commands, checkpoint_commands, limit_commands, live, model_commands, mouse_debug,
+    paths, project_commands, protection_commands, route_commands, session_commands,
+    uninstall_commands, CliOptions,
 };
 
 pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
@@ -58,6 +58,10 @@ pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
         Some(Command::Replay(args)) => replay(&options.root, args),
         Some(Command::Export(args)) => export(&options.root, args),
         Some(Command::Gateway(args)) => gateway(&options.root, &args.bind),
+        Some(Command::MouseDebug) => {
+            mouse_debug::run()?;
+            Ok(String::new())
+        }
         Some(Command::Tui) => render_workspace_tui(&options.root),
         Some(Command::Skills(args)) => {
             skills(&options.root, args.command, options.env_key.as_deref())
@@ -108,6 +112,7 @@ fn resolve_auth_set_key(api_key: Option<String>, env_key: Option<&str>) -> Resul
 pub(crate) fn doctor(root: &Path, env_key: Option<&str>) -> Result<String> {
     let mut out = String::new();
     out.push_str(&config_check(root));
+    out.push_str(&mouse_debug::doctor_report());
     out.push_str(&auth::render_status(&auth::status(root, env_key)?));
     match live::client(root, env_key)? {
         Some(client) => live::block_on(async move {

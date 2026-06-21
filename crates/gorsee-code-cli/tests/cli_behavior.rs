@@ -88,6 +88,7 @@ fn doctor_without_key_reports_local_checks_and_skips_live_api() {
     let output = run_with_options(["gcode", "doctor"], CliOptions::for_root(temp.path())).unwrap();
 
     assert!(output.contains("config: ok"));
+    assert!(output.contains("terminal: term="));
     assert!(output.contains("auth: missing"));
     assert!(output.contains("neurogate: skipped"));
 }
