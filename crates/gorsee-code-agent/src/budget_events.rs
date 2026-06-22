@@ -60,6 +60,28 @@ pub(crate) fn write_token_ledger(
         .map_err(|error| AgentRunError::Runtime(error.to_string()))
 }
 
+pub(crate) fn append_token_ledger(
+    session_dir: &Path,
+    usage_records: &[UsageRecord],
+) -> Result<Vec<UsageRecord>, AgentRunError> {
+    let mut records = read_token_records(session_dir)?;
+    records.extend_from_slice(usage_records);
+    write_token_ledger(session_dir, &records)?;
+    Ok(records)
+}
+
+fn read_token_records(session_dir: &Path) -> Result<Vec<UsageRecord>, AgentRunError> {
+    let path = session_dir.join("token-ledger.json");
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(AgentRunError::Runtime(error.to_string())),
+    };
+    let ledger = serde_json::from_str::<TokenLedger>(&text)
+        .map_err(|error| AgentRunError::Runtime(error.to_string()))?;
+    Ok(ledger.records)
+}
+
 pub(crate) fn record_budget_status(
     sink: &mut EventSink<'_>,
     manifest: &SessionManifest,

@@ -33,6 +33,20 @@ fn completed_submit_selects_created_session_without_fake_output() {
 }
 
 #[test]
+fn submitted_turn_selects_session_from_lcp_output() {
+    let job = thread::spawn(|| -> Result<String> {
+        Ok("run: session=session-456\nstatus=waiting_approval\nintent=Edit".into())
+    });
+    let mut app = WorkspaceApp::new();
+
+    finish_joined(job, &mut app);
+
+    assert_eq!(app.active_session_id(), Some("session-456"));
+    assert_eq!(app.output(), None);
+    assert_eq!(app.status(), None);
+}
+
+#[test]
 fn invalid_model_response_is_not_dumped_into_chat() {
     let job = thread::spawn(|| -> Result<String> {
         Err(anyhow::anyhow!(
@@ -56,7 +70,7 @@ fn command_handler_uses_selected_working_folder() {
     let calls = Arc::new(Mutex::new(Vec::<(PathBuf, String)>::new()));
     let command_calls = calls.clone();
     let handlers = TuiHandlers::new(
-        noop_handler,
+        noop_submit_handler,
         noop_handler,
         noop_handler,
         noop_handler,
@@ -90,9 +104,47 @@ fn command_handler_uses_selected_working_folder() {
 }
 
 #[test]
+fn submit_handler_receives_active_session_id() {
+    let temp = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::<Option<String>>::new()));
+    let submit_calls = calls.clone();
+    let handlers = TuiHandlers::new(
+        move |_root, session_id, _line| {
+            submit_calls
+                .lock()
+                .unwrap()
+                .push(session_id.map(ToOwned::to_owned));
+            Ok("run: completed session=session-123".into())
+        },
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+        noop_handler,
+    );
+    let mut app = WorkspaceApp::new();
+    app.active_session_id = Some("session-123".into());
+    let mut worker = None;
+
+    process_intent(
+        AppIntent::Submit("следующий turn".into()),
+        &mut worker,
+        &handlers,
+        &mut app,
+        temp.path(),
+    );
+    finish_joined(worker.take().expect("worker"), &mut app);
+
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        &[Some("session-123".into())]
+    );
+}
+
+#[test]
 fn busy_worker_restores_submitted_prompt() {
     let handlers = TuiHandlers::new(
-        noop_handler,
+        noop_submit_handler,
         noop_handler,
         noop_handler,
         noop_handler,
@@ -128,7 +180,7 @@ fn busy_worker_restores_submitted_prompt() {
 #[test]
 fn quit_while_worker_is_running_requires_second_quit() {
     let handlers = TuiHandlers::new(
-        noop_handler,
+        noop_submit_handler,
         noop_handler,
         noop_handler,
         noop_handler,
@@ -160,5 +212,9 @@ fn quit_while_worker_is_running_requires_second_quit() {
 }
 
 fn noop_handler(_root: &Path, _line: String) -> Result<String> {
+    Ok(String::new())
+}
+
+fn noop_submit_handler(_root: &Path, _session_id: Option<&str>, _line: String) -> Result<String> {
     Ok(String::new())
 }

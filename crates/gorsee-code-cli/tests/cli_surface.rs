@@ -24,6 +24,50 @@ fn route_explains_production_agent_plan_without_live_auth() {
 }
 
 #[test]
+fn acp_plan_exposes_orchestrator_contract_without_live_auth() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let output = run_with_options(
+        ["gcode", "acp", "plan", "создай", "модуль", "diff"],
+        CliOptions::for_root(temp.path()),
+    )
+    .unwrap();
+    let value: Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(value["intent"]["intent"], "edit");
+    assert_eq!(
+        value["request"]["workspace"]["root"],
+        temp.path().display().to_string()
+    );
+    assert!(value["plan"]["steps"].as_array().unwrap().len() >= 3);
+    assert_product_output(&output);
+}
+
+#[test]
+fn acp_status_advertises_stdio_surface() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let output = run_with_options(["gcode", "acp"], CliOptions::for_root(temp.path())).unwrap();
+
+    assert!(output.contains("protocol=v1"));
+    assert!(output.contains("commands=plan,run,stdio"));
+    assert_product_output(&output);
+}
+
+#[test]
+fn mcp_command_shows_real_runtime_inventory() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let output = run_with_options(["gcode", "mcp"], CliOptions::for_root(temp.path())).unwrap();
+
+    assert!(output.contains("mcp:"));
+    assert!(output.contains("source=rmcp"));
+    assert!(output.contains("servers=0"));
+    assert!(output.contains("local-tools:"));
+    assert_product_output(&output);
+}
+
+#[test]
 fn budget_set_updates_session_limit_in_project_config() {
     let temp = tempfile::tempdir().unwrap();
 

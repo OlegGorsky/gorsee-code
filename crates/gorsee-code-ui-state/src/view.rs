@@ -18,6 +18,7 @@ pub struct AgentView {
     pub model: String,
     pub status: String,
     pub tokens_used: u64,
+    pub cached_tokens: u64,
     pub tokens_limit: u64,
 }
 
@@ -40,6 +41,7 @@ pub struct ToolCallView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BudgetView {
     pub used_tokens: u64,
+    pub cached_tokens: u64,
     pub limit_tokens: u64,
     pub percent_used: f64,
     pub warning: bool,
@@ -63,6 +65,7 @@ impl AgentView {
             &profile.model,
             status,
             tokens_used,
+            0,
             profile.budget_tokens,
         )
     }
@@ -72,6 +75,7 @@ impl AgentView {
         model: &str,
         status: AgentStatus,
         tokens_used: u64,
+        cached_tokens: u64,
         tokens_limit: u64,
     ) -> Self {
         Self {
@@ -80,6 +84,7 @@ impl AgentView {
             model: model.into(),
             status: format!("{status:?}").to_lowercase(),
             tokens_used,
+            cached_tokens,
             tokens_limit,
         }
     }
@@ -100,6 +105,7 @@ impl From<BudgetStatus> for BudgetView {
     fn from(status: BudgetStatus) -> Self {
         Self {
             used_tokens: status.used_tokens,
+            cached_tokens: status.cached_tokens,
             limit_tokens: status.limit_tokens,
             percent_used: status.percent_used,
             warning: status.warning,
@@ -110,10 +116,11 @@ impl From<BudgetStatus> for BudgetView {
 
 fn summarize_event(event: &Event) -> String {
     match &event.kind {
-        EventKind::SessionStarted => {
+        EventKind::SessionStarted | EventKind::TurnStarted => {
             payload_text(event, "objective").unwrap_or_else(|| "новая сессия".to_string())
         }
         EventKind::SessionFinished => "готово".into(),
+        EventKind::TurnFinished => "ход завершен".into(),
         EventKind::SessionPaused => "сессия на паузе".into(),
         EventKind::SessionResumed => "сессия продолжена".into(),
         EventKind::AgentStarted => payload_text(event, "model")
@@ -127,6 +134,9 @@ fn summarize_event(event: &Event) -> String {
         EventKind::ToolDenied => tool_summary(event, "отклонен"),
         EventKind::PatchProposed => tool_summary(event, "предложил patch"),
         EventKind::PatchApplied => "patch применен".into(),
+        EventKind::DiffReady => {
+            payload_text(event, "summary").unwrap_or_else(|| "diff готов".into())
+        }
         EventKind::BudgetWarning => "лимит близко к порогу".into(),
         EventKind::BudgetExceeded => "лимит исчерпан".into(),
         EventKind::Error => payload_text(event, "error")
@@ -156,14 +166,14 @@ fn summarize_event(event: &Event) -> String {
 
 fn kind_label(kind: &EventKind) -> &'static str {
     match kind {
-        EventKind::SessionStarted => "user",
+        EventKind::SessionStarted | EventKind::TurnStarted => "user",
         EventKind::AgentMessage => "assistant",
         EventKind::ToolRequested
         | EventKind::ToolStarted
         | EventKind::ToolFinished
         | EventKind::ToolApproved
         | EventKind::ToolDenied => "tool",
-        EventKind::PatchProposed | EventKind::PatchApplied => "patch",
+        EventKind::PatchProposed | EventKind::PatchApplied | EventKind::DiffReady => "patch",
         EventKind::BudgetWarning | EventKind::BudgetExceeded => "limit",
         EventKind::Error => "error",
         _ => "process",
@@ -172,7 +182,7 @@ fn kind_label(kind: &EventKind) -> &'static str {
 
 fn event_actor(event: &Event) -> Option<String> {
     match &event.kind {
-        EventKind::SessionStarted => Some("Вы".into()),
+        EventKind::SessionStarted | EventKind::TurnStarted => Some("Вы".into()),
         _ => event.agent_id.clone(),
     }
 }

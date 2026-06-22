@@ -9,15 +9,27 @@ use crate::{
     live,
 };
 
-pub fn run(root: &Path, env_key: Option<&str>, args: LimitsArgs) -> Result<String> {
+pub fn run(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+    args: LimitsArgs,
+) -> Result<String> {
     match args.command {
-        None => current(root, env_key, args.json),
-        Some(LimitsCommand::Watch(watch_args)) => watch(root, env_key, args.json, watch_args),
+        None => current(root, env_key, global_auth_path, args.json),
+        Some(LimitsCommand::Watch(watch_args)) => {
+            watch(root, env_key, global_auth_path, args.json, watch_args)
+        }
     }
 }
 
-fn current(root: &Path, env_key: Option<&str>, json: bool) -> Result<String> {
-    let Some(client) = live::client(root, env_key)? else {
+fn current(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+    json: bool,
+) -> Result<String> {
+    let Some(client) = live::client(root, env_key, global_auth_path)? else {
         return missing_auth("limits:", json);
     };
     live::block_on(async move {
@@ -26,8 +38,14 @@ fn current(root: &Path, env_key: Option<&str>, json: bool) -> Result<String> {
     })
 }
 
-fn watch(root: &Path, env_key: Option<&str>, json: bool, _args: LimitsWatchArgs) -> Result<String> {
-    let Some(client) = live::client(root, env_key)? else {
+fn watch(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+    json: bool,
+    _args: LimitsWatchArgs,
+) -> Result<String> {
+    let Some(client) = live::client(root, env_key, global_auth_path)? else {
         return missing_auth("limits watch:", json);
     };
     live::block_on(async move {

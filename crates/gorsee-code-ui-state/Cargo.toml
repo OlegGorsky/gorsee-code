@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+gorsee-code-coding-core = { path = "../gorsee-code-coding-core" }
 gorsee-code-config = { path = "../gorsee-code-config" }
 gorsee-code-core = { path = "../gorsee-code-core" }
 gorsee-code-session = { path = "../gorsee-code-session" }

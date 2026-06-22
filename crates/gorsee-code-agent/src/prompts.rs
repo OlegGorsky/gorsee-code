@@ -1,3 +1,4 @@
+use gorsee_code_coding_core::{ExecutionContract, TurnPlan};
 use gorsee_code_core::{AgentProfile, TaskSpec};
 use gorsee_code_neurogate::{ChatMessage, ChatRequest};
 use gorsee_code_tool_runtime::ToolManifest;
@@ -13,6 +14,8 @@ pub(crate) struct PromptContext<'a> {
     pub(crate) previous_answers: &'a [AgentAnswer],
     pub(crate) previous_tool_results: &'a [ToolResult],
     pub(crate) results: &'a [ToolResult],
+    pub(crate) turn_plan: Option<&'a TurnPlan>,
+    pub(crate) execution_contract: &'a ExecutionContract,
     pub(crate) step: usize,
 }
 
@@ -33,6 +36,7 @@ pub(crate) fn request(context: PromptContext<'_>) -> ChatRequest {
         ],
     )
     .with_prompt_cache_key(prompt_cache_key(&context, "agent"))
+    .with_prompt_cache_retention("24h")
 }
 
 fn lightweight_chat(context: &PromptContext<'_>) -> bool {
@@ -56,6 +60,7 @@ fn lightweight_chat_request(context: &PromptContext<'_>) -> ChatRequest {
         ],
     )
     .with_prompt_cache_key(prompt_cache_key(context, "chat"))
+    .with_prompt_cache_retention("24h")
 }
 
 fn lightweight_system_prompt() -> String {
@@ -75,6 +80,13 @@ fn system_prompt() -> String {
         "\"tool_calls\":[{\"name\":\"tool\",\"args\":{}}],",
         "\"final_answer\":\"...\"}.",
         "Call tools when you need repository facts. Provide final_answer only when done.",
+        "For repository-editing work, do not dump full source code in final_answer as the implementation.",
+        "Use file tools for changes, inspect diff, run suitable checks, then summarize files and verification.",
+        "Architect/Scout roles hand off findings and plans; they must not claim an edit is impossible just because their own tool set is read-only.",
+        "Only Validator/Summarizer should close coding turns for the user; earlier roles provide internal handoff context.",
+        "run_test is only for project test commands: cargo, npm, pnpm, yarn, pytest, or go.",
+        "Do not call run_test with cat, ls, file, python, shell snippets, or ad-hoc file checks; use read_file/list_files for file existence and content verification.",
+        "If run_test reports skipped or unsupported command, do not retry with another ad-hoc shell command; summarize the skipped verification and any read_file/list_files evidence.",
     ]
     .join(" ")
 }
@@ -92,6 +104,9 @@ fn static_context_prompt(context: &PromptContext<'_>) -> String {
         "skill": context.skill_id,
         "budget_tokens": context.spec.budget_tokens,
         "available_tools": context.tools,
+        "turn_plan": context.turn_plan,
+        "execution_contract": context.execution_contract,
+        "execution_policy": execution_policy(context),
     })
     .to_string()
 }
@@ -105,6 +120,21 @@ fn work_prompt(context: &PromptContext<'_>) -> String {
         "tool_results": context.results,
     })
     .to_string()
+}
+
+fn execution_policy(context: &PromptContext<'_>) -> serde_json::Value {
+    let can_write = context
+        .tools
+        .iter()
+        .any(|tool| tool.name == "apply_patch" || tool.name == "propose_patch");
+    json!({
+        "write_tools_available": can_write,
+        "must_use_tools_for_file_changes": can_write,
+        "final_answer": {
+            "chat_only": "answer naturally",
+            "coding_task": "brief summary, changed files, diff/check status; no full code dump as substitute for edits"
+        }
+    })
 }
 
 fn prompt_cache_key(context: &PromptContext<'_>, mode: &str) -> String {

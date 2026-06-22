@@ -13,7 +13,7 @@ use axum::{
     Json, Router,
 };
 use gorsee_code_agent::{AgentRunError, ChatClient, TaskRunner};
-use gorsee_code_core::{EventKind, TaskSpec};
+use gorsee_code_core::{default_agent_matrix, AgentProfile, AgentRole, EventKind, TaskSpec};
 use gorsee_code_gateway::{app, GatewayState};
 use gorsee_code_neurogate::{ChatRequest, ChatResponse};
 use gorsee_code_safety::{Redactor, RiskClass};
@@ -74,20 +74,18 @@ async fn gateway_approval_resumes_saved_execution_with_live_client() {
     .to_string()]);
     let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
     let spec = TaskSpec::new("ship approved change", temp.path().display().to_string());
-    let AgentRunError::WaitingApproval(approval_id) =
-        runner.run_sequential(&spec, &initial_client).unwrap_err()
+    let AgentRunError::WaitingApproval(approval_id) = runner
+        .run_sequential_with_agents(
+            &spec,
+            &initial_client,
+            vec![agent_by_role(AgentRole::Coder)],
+        )
+        .unwrap_err()
     else {
         panic!("expected waiting approval");
     };
     let session_id = only_session_id(temp.path());
-    let endpoint = start_chat_server(vec![
-        final_answer("architect continued"),
-        final_answer("scout done"),
-        final_answer("coder done"),
-        final_answer("validator done"),
-        final_answer("summarizer done"),
-    ])
-    .await;
+    let endpoint = start_chat_server(vec![final_answer("coder continued")]).await;
     write_gateway_live_config(temp.path(), &endpoint);
 
     let router = app(GatewayState::workspace(temp.path()));
@@ -211,6 +209,13 @@ fn final_answer(answer: &str) -> String {
     json!({ "message": answer, "final_answer": answer }).to_string()
 }
 
+fn agent_by_role(role: AgentRole) -> AgentProfile {
+    default_agent_matrix()
+        .into_iter()
+        .find(|agent| agent.role == role)
+        .unwrap()
+}
+
 struct MockClient {
     replies: RefCell<Vec<String>>,
 }
@@ -240,12 +245,17 @@ fn without_neurogate_env() -> EnvGuard {
     let _guard = env_lock().lock().unwrap();
     let old_primary = std::env::var_os("NEUROGATE_API_KEY");
     let old_fallback = std::env::var_os("GORSEE_NEUROGATE_API_KEY");
+    let old_auth_home = std::env::var_os("GORSEE_CODE_AUTH_HOME");
+    let auth_home = tempfile::tempdir().unwrap();
     std::env::remove_var("NEUROGATE_API_KEY");
     std::env::remove_var("GORSEE_NEUROGATE_API_KEY");
+    std::env::set_var("GORSEE_CODE_AUTH_HOME", auth_home.path());
     EnvGuard {
         _guard,
         old_primary,
         old_fallback,
+        old_auth_home,
+        _auth_home: auth_home,
     }
 }
 
@@ -258,12 +268,15 @@ struct EnvGuard {
     _guard: std::sync::MutexGuard<'static, ()>,
     old_primary: Option<std::ffi::OsString>,
     old_fallback: Option<std::ffi::OsString>,
+    old_auth_home: Option<std::ffi::OsString>,
+    _auth_home: tempfile::TempDir,
 }
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         restore_env("NEUROGATE_API_KEY", self.old_primary.take());
         restore_env("GORSEE_NEUROGATE_API_KEY", self.old_fallback.take());
+        restore_env("GORSEE_CODE_AUTH_HOME", self.old_auth_home.take());
     }
 }
 

@@ -1,13 +1,16 @@
 use std::path::Path;
 
 use anyhow::Result;
-use gorsee_code_agent::TaskRunSummary;
+use gorsee_code_agent::TaskTurnOutput;
 use gorsee_code_session::ApprovalDecision;
 use gorsee_code_tui::{run_app, TuiHandlers};
 use gorsee_code_ui_state::{workspace_state, workspace_state_for_session};
 
 use crate::{
-    approval_commands, args::SessionIdArgs, auth, commands_extra::run_interactive_task,
+    approval_commands,
+    args::SessionIdArgs,
+    auth,
+    commands_extra::{format_task_output, run_interactive_task_response},
     session_commands, CliOptions,
 };
 
@@ -27,7 +30,7 @@ pub fn run(options: &CliOptions) -> Result<()> {
 fn tui_env_key(options: &CliOptions) -> Result<Option<String>> {
     match options.env_key.clone() {
         Some(key) if !key.trim().is_empty() => Ok(Some(key)),
-        _ => auth::api_key(&options.root, None),
+        _ => auth::api_key_at(&options.root, None, options.global_auth_path.as_deref()),
     }
 }
 
@@ -44,10 +47,11 @@ fn handlers(env_key: Option<String>) -> TuiHandlers {
 
 fn submit_handler(
     env_key: Option<String>,
-) -> impl Fn(&Path, String) -> Result<String> + Send + Sync + 'static {
-    move |root, objective| {
-        let summary = run_interactive_task(root, objective, env_key.as_deref())?;
-        Ok(format_summary(&summary))
+) -> impl Fn(&Path, Option<&str>, String) -> Result<String> + Send + Sync + 'static {
+    move |root, session_id, objective| {
+        let output =
+            run_interactive_task_response(root, session_id, objective, env_key.as_deref(), None)?;
+        Ok(format_summary(&output))
     }
 }
 
@@ -55,7 +59,13 @@ fn approve_handler(
     env_key: Option<String>,
 ) -> impl Fn(&Path, String) -> Result<String> + Send + Sync + 'static {
     move |root, id| {
-        approval_commands::decide(root, &id, ApprovalDecision::Approved, env_key.as_deref())
+        approval_commands::decide(
+            root,
+            &id,
+            ApprovalDecision::Approved,
+            env_key.as_deref(),
+            None,
+        )
     }
 }
 
@@ -63,7 +73,13 @@ fn deny_handler(
     env_key: Option<String>,
 ) -> impl Fn(&Path, String) -> Result<String> + Send + Sync + 'static {
     move |root, id| {
-        approval_commands::decide(root, &id, ApprovalDecision::Denied, env_key.as_deref())
+        approval_commands::decide(
+            root,
+            &id,
+            ApprovalDecision::Denied,
+            env_key.as_deref(),
+            None,
+        )
     }
 }
 
@@ -89,14 +105,8 @@ fn resume_handler() -> impl Fn(&Path, String) -> Result<String> + Send + Sync + 
     }
 }
 
-fn format_summary(summary: &TaskRunSummary) -> String {
-    format!(
-        "run: completed session={}\nevents={}\nagents={}\nartifacts={}",
-        summary.session_id,
-        summary.events,
-        summary.agents.join(","),
-        summary.artifacts.len()
-    )
+fn format_summary(output: &TaskTurnOutput) -> String {
+    format_task_output(output).trim_end().to_string()
 }
 
 #[cfg(test)]

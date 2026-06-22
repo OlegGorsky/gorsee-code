@@ -20,13 +20,22 @@ pub fn init(root: &Path) -> Result<String> {
     ))
 }
 
-pub fn setup(root: &Path, env_key: Option<&str>) -> Result<String> {
+pub fn setup(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
     let mut out = "setup: ready\n".to_string();
     out.push_str(&init(root)?);
     if let Some(key) = env_key.map(str::trim).filter(|key| !key.is_empty()) {
         auth::set(root, key)?;
+        auth::set_global_at(global_auth_path, key)?;
     }
-    out.push_str(&auth::render_status(&auth::status(root, None)?));
+    out.push_str(&auth::render_status(&auth::status_at(
+        root,
+        None,
+        global_auth_path,
+    )?));
     Ok(out)
 }
 

@@ -52,8 +52,14 @@ fn push_agents(out: &mut String, state: &WorkspaceState) {
     out.push_str("Агенты\n");
     for agent in &state.agents {
         out.push_str(&format!(
-            "- {} role={} status={} model={} tokens={}/{}\n",
-            agent.id, agent.role, agent.status, agent.model, agent.tokens_used, agent.tokens_limit
+            "- {} role={} status={} model={} tokens={}/{} cached={}\n",
+            agent.id,
+            agent.role,
+            agent.status,
+            agent.model,
+            agent.tokens_used,
+            agent.tokens_limit,
+            agent.cached_tokens
         ));
     }
     out.push('\n');
@@ -63,10 +69,7 @@ fn push_timeline(out: &mut String, state: &WorkspaceState) {
     out.push_str("Лента\n");
     for event in &state.timeline {
         let agent = event.agent_id.as_deref().unwrap_or(&event.kind);
-        out.push_str(&format!(
-            "- #{:04} {}: {}\n",
-            event.sequence, agent, event.summary
-        ));
+        out.push_str(&format!("- {}: {}\n", agent, event.summary));
     }
     out.push('\n');
 }
@@ -92,10 +95,11 @@ fn push_inspector(out: &mut String, state: &WorkspaceState) {
     out.push_str("Инспектор\n");
     let budget_status = budget_status(state);
     out.push_str(&format!(
-        "- Лимиты: {}/{} токенов ({:.1}%) {}\n",
+        "- Лимиты: {}/{} токенов ({:.1}%) cache={} {}\n",
         state.budget.used_tokens,
         state.budget.limit_tokens,
         state.budget.percent_used,
+        state.budget.cached_tokens,
         budget_status
     ));
     if state.budget.warning {

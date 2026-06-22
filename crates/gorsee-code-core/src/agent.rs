@@ -97,7 +97,7 @@ fn architect_profile() -> AgentProfile {
         AgentRole::Architect,
         preferred_model_ids(&AgentRole::Architect)[0],
         "high",
-        &["read", "search", "repo_map"],
+        &["read", "search", "repo_map", "mcp"],
         40_000,
         0.2,
     )
@@ -108,7 +108,7 @@ fn scout_profile() -> AgentProfile {
         AgentRole::Scout,
         preferred_model_ids(&AgentRole::Scout)[0],
         "low",
-        &["read", "search", "repo_map"],
+        &["read", "search", "repo_map", "mcp"],
         12_000,
         0.1,
     )
@@ -119,7 +119,7 @@ fn coder_profile() -> AgentProfile {
         AgentRole::Coder,
         preferred_model_ids(&AgentRole::Coder)[0],
         "medium",
-        &["read", "search", "propose_patch", "run_test"],
+        &["read", "search", "propose_patch", "run_test", "mcp"],
         50_000,
         0.15,
     )

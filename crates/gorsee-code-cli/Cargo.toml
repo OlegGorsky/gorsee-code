@@ -20,11 +20,14 @@ anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true
 gorsee-code-agent = { path = "../gorsee-code-agent" }
+gorsee-code-acp = { path = "../gorsee-code-acp" }
+gorsee-code-coding-core = { path = "../gorsee-code-coding-core" }
 gorsee-code-config = { path = "../gorsee-code-config" }
 gorsee-code-core = { path = "../gorsee-code-core" }
 gorsee-code-gateway = { path = "../gorsee-code-gateway" }
 gorsee-code-hooks = { path = "../gorsee-code-hooks" }
 gorsee-code-limits = { path = "../gorsee-code-limits" }
+gorsee-code-mcp = { path = "../gorsee-code-mcp" }
 gorsee-code-neurogate = { path = "../gorsee-code-neurogate" }
 gorsee-code-safety = { path = "../gorsee-code-safety" }
 gorsee-code-session = { path = "../gorsee-code-session" }

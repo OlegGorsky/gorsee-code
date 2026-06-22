@@ -6,8 +6,12 @@ use gorsee_code_neurogate::NeuroGateClient;
 
 use crate::{auth, paths};
 
-pub fn client(root: &Path, env_key: Option<&str>) -> Result<Option<NeuroGateClient>> {
-    let Some(api_key) = auth::api_key(root, env_key)? else {
+pub fn client(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<Option<NeuroGateClient>> {
+    let Some(api_key) = auth::api_key_at(root, env_key, global_auth_path)? else {
         return Ok(None);
     };
     let config = GorseeConfig::load(paths::config_path(root))

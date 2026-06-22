@@ -126,7 +126,6 @@ pub(crate) fn push_event(lines: &mut Vec<Line<'static>>, event: &EventView) {
         .map(title)
         .unwrap_or_else(|| label(&event.kind));
     lines.push(Line::from(vec![
-        Span::styled(format!("#{:04} ", event.sequence), theme::dim()),
         Span::styled(actor, actor_style(&event.kind)),
         Span::styled(" · ", theme::dim()),
         Span::raw(summary(event)),

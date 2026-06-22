@@ -1,4 +1,5 @@
 use gorsee_code_neurogate::ChatResponse;
+use gorsee_code_tool_runtime::ToolOutput;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -42,19 +43,26 @@ pub(crate) struct ToolResult {
     pub(crate) name: String,
     pub(crate) ok: bool,
     pub(crate) text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) json: Option<Value>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) truncated: bool,
 }
 
 impl ToolResult {
-    pub(crate) fn success(
+    pub(crate) fn output(
         agent_id: impl Into<String>,
         name: impl Into<String>,
-        text: impl Into<String>,
+        ok: bool,
+        output: ToolOutput,
     ) -> Self {
         Self {
             agent_id: agent_id.into(),
             name: name.into(),
-            ok: true,
-            text: text.into(),
+            ok,
+            text: output.text,
+            json: output.json,
+            truncated: output.truncated,
         }
     }
 
@@ -68,8 +76,14 @@ impl ToolResult {
             name: name.into(),
             ok: false,
             text: text.into(),
+            json: None,
+            truncated: false,
         }
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 pub(crate) fn parse_response(response: &ChatResponse) -> Result<ModelTurn, AgentRunError> {

@@ -5,7 +5,8 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
-use gorsee_code_agent::{TaskRunSummary, TaskRunner};
+use gorsee_code_agent::{TaskRunner, TaskTurnOutput};
+use gorsee_code_coding_core::{TurnRequest, WorkspaceRef};
 use gorsee_code_config::{default_config, GorseeConfig};
 use gorsee_code_core::{
     default_agent_matrix, preferred_model_ids, AgentProfile, AgentRole, ModelCapability, TaskSpec,
@@ -18,6 +19,9 @@ use gorsee_code_skills::find_skill;
 use gorsee_code_tools::builtin_registry;
 use gorsee_code_ui_state::workspace_state;
 
+use crate::diff_output::render_structured_diff;
+use crate::interactive_agents::live_turn_agents;
+pub use crate::task_output::format_task_output;
 use crate::{args::ObjectiveArgs, live, paths};
 
 pub fn agents() -> Result<String> {
@@ -67,6 +71,9 @@ pub fn diff(root: &Path) -> Result<String> {
     let output = registry
         .run("git_diff", serde_json::json!({}))
         .context("read git diff")?;
+    if let Some(value) = output.json.as_ref() {
+        return Ok(render_structured_diff(value, &output.text));
+    }
     if output.text.trim().is_empty() {
         return Ok("diff: clean\n".into());
     }
@@ -81,8 +88,12 @@ pub fn hooks() -> Result<String> {
     Ok(out)
 }
 
-pub fn capabilities(root: &Path, env_key: Option<&str>) -> Result<String> {
-    if let Some(client) = live::client(root, env_key)? {
+pub fn capabilities(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
+    if let Some(client) = live::client(root, env_key, global_auth_path)? {
         return live::block_on(async move {
             let models = client.list_models().await?;
             Ok(format!("capabilities: live models={}\n", models.len()))
@@ -95,43 +106,58 @@ pub fn capabilities(root: &Path, env_key: Option<&str>) -> Result<String> {
     ))
 }
 
-pub fn execute(root: &Path, args: ObjectiveArgs, env_key: Option<&str>) -> Result<String> {
+pub fn execute(
+    root: &Path,
+    args: ObjectiveArgs,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
     let objective = args.objective.join(" ");
-    let summary = run_task(root, objective, env_key)?;
-    Ok(format!(
-        "run: completed session={}\nevents={}\nagents={}\nartifacts={}\n",
-        summary.session_id,
-        summary.events,
-        summary.agents.join(","),
-        summary.artifacts.len()
-    ))
+    let output = run_task_response(root, objective, env_key, global_auth_path)?;
+    Ok(format_task_output(&output))
 }
 
-pub fn run_task(
+pub fn run_task_response(
     root: &Path,
     objective: impl Into<String>,
     env_key: Option<&str>,
-) -> Result<TaskRunSummary> {
-    let client = require_live_client(root, env_key)?;
-    let agents = live_agent_matrix(&client)?;
-    paths::ensure_layout(root)?;
-    let spec = TaskSpec::new(objective, root.display().to_string());
-    Ok(TaskRunner::new(paths::local_dir(root))
-        .run_sequential_with_agents(&spec, &client, agents)?)
-}
-
-pub fn run_interactive_task(
-    root: &Path,
-    objective: impl Into<String>,
-    env_key: Option<&str>,
-) -> Result<TaskRunSummary> {
+    global_auth_path: Option<&Path>,
+) -> Result<TaskTurnOutput> {
     let objective = objective.into();
-    let client = require_live_client(root, env_key)?;
-    let agents = live_interactive_agents(&client, &objective)?;
+    let client = require_live_client(root, env_key, global_auth_path)?;
+    let agents = live_turn_agents(&client, root, &objective)?;
     paths::ensure_layout(root)?;
-    let spec = TaskSpec::new(objective, root.display().to_string());
-    Ok(TaskRunner::new(paths::local_dir(root))
-        .run_sequential_with_agents(&spec, &client, agents)?)
+    let request = turn_request(root, None, objective);
+    Ok(TaskRunner::new(paths::local_dir(root)).run_lcp_turn(request, &client, agents)?)
+}
+
+pub fn run_interactive_task_response(
+    root: &Path,
+    active_session_id: Option<&str>,
+    objective: impl Into<String>,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<TaskTurnOutput> {
+    let objective = objective.into();
+    let client = require_live_client(root, env_key, global_auth_path)?;
+    let agents = live_turn_agents(&client, root, &objective)?;
+    paths::ensure_layout(root)?;
+    let runner = TaskRunner::new(paths::local_dir(root));
+    let session_id = active_session_id.filter(|id| read_manifest(root, id).is_ok());
+    let request = turn_request(root, session_id, objective);
+    Ok(runner.run_lcp_turn(request, &client, agents)?)
+}
+
+fn turn_request(root: &Path, session_id: Option<&str>, objective: String) -> TurnRequest {
+    TurnRequest {
+        workspace: WorkspaceRef {
+            root: root.display().to_string(),
+            branch: None,
+            session_id: session_id.map(str::to_string),
+        },
+        message: objective,
+        user_id: Some("cli".into()),
+    }
 }
 
 pub fn run_skill(
@@ -139,8 +165,9 @@ pub fn run_skill(
     id: &str,
     objective: Vec<String>,
     env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
 ) -> Result<String> {
-    let client = require_live_client(root, env_key)?;
+    let client = require_live_client(root, env_key, global_auth_path)?;
     let agents = live_agent_matrix(&client)?;
     let skill = find_skill(id).ok_or_else(|| anyhow!("unknown skill: {id}"))?;
     paths::ensure_layout(root)?;
@@ -162,8 +189,12 @@ pub fn run_skill(
     ))
 }
 
-pub(crate) fn require_live_client(root: &Path, env_key: Option<&str>) -> Result<NeuroGateClient> {
-    live::client(root, env_key)?.ok_or_else(missing_auth)
+pub(crate) fn require_live_client(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<NeuroGateClient> {
+    live::client(root, env_key, global_auth_path)?.ok_or_else(missing_auth)
 }
 
 fn live_agent_matrix(client: &NeuroGateClient) -> Result<Vec<AgentProfile>> {
@@ -176,92 +207,7 @@ fn live_agent_matrix(client: &NeuroGateClient) -> Result<Vec<AgentProfile>> {
     Ok(agents)
 }
 
-fn live_interactive_agents(client: &NeuroGateClient, objective: &str) -> Result<Vec<AgentProfile>> {
-    if is_simple_chat(objective) {
-        return live_primary_agent(client);
-    }
-    live_agent_matrix(client)
-}
-
-fn live_primary_agent(client: &NeuroGateClient) -> Result<Vec<AgentProfile>> {
-    let models = live::block_on(async { Ok(client.list_models().await?) })?;
-    let mut health = BTreeMap::new();
-    let mut agent = default_agent_matrix()
-        .into_iter()
-        .find(|profile| profile.role == AgentRole::Architect)
-        .ok_or_else(|| anyhow!("architect agent profile is missing"))?;
-    agent.model = select_live_model(client, &agent.role, &models, &mut health)?;
-    agent.reasoning = "low".into();
-    agent.tools.clear();
-    agent.budget_tokens = agent.budget_tokens.min(8_000);
-    Ok(vec![agent])
-}
-
-fn is_simple_chat(objective: &str) -> bool {
-    let value = objective.trim().to_lowercase();
-    if value.is_empty() || value.len() > 180 || value.lines().count() > 2 {
-        return false;
-    }
-    if value.starts_with('/') {
-        return false;
-    }
-    if task_like_words().iter().any(|word| value.contains(word)) {
-        return false;
-    }
-    simple_chat_prefixes()
-        .iter()
-        .any(|prefix| value.starts_with(prefix))
-        || value.split_whitespace().count() <= 18
-}
-
-fn simple_chat_prefixes() -> &'static [&'static str] {
-    &[
-        "привет",
-        "здравств",
-        "добрый день",
-        "доброе утро",
-        "добрый вечер",
-        "hello",
-        "hi",
-        "hey",
-        "как дела",
-        "спасибо",
-        "ок",
-        "ладно",
-        "понял",
-    ]
-}
-
-fn task_like_words() -> &'static [&'static str] {
-    &[
-        "добав",
-        "исправ",
-        "почин",
-        "сдел",
-        "созда",
-        "реализ",
-        "проверь",
-        "запусти",
-        "открой",
-        "найди",
-        "удали",
-        "перенеси",
-        "закомить",
-        "зарелиз",
-        "файл",
-        "папк",
-        "код",
-        "тест",
-        "ошиб",
-        "bug",
-        "fix",
-        "commit",
-        "release",
-        "run",
-    ]
-}
-
-fn select_live_model(
+pub(crate) fn select_live_model(
     client: &NeuroGateClient,
     role: &AgentRole,
     models: &[ModelCapability],
@@ -335,6 +281,12 @@ fn is_model_rejection(error: &NeuroGateError) -> bool {
     matches!(
         error,
         NeuroGateError::Status { status: 400, body, .. } if body.contains("upstream_rejected")
+    ) || matches!(
+        error,
+        NeuroGateError::Status {
+            status: 500..=599,
+            ..
+        }
     )
 }
 
@@ -432,19 +384,15 @@ mod tests {
             url: "https://api.neurogate.space/v1/chat/completions".into(),
             body: r#"{"error":{"code":"unauthorized"}}"#.into(),
         };
+        let upstream_500 = NeuroGateError::Status {
+            status: 500,
+            url: "https://api.neurogate.space/v1/chat/completions".into(),
+            body: r#"{"title":"An error occurred while processing your request."}"#.into(),
+        };
 
         assert!(is_model_rejection(&rejected));
+        assert!(is_model_rejection(&upstream_500));
         assert!(!is_model_rejection(&auth));
-    }
-
-    #[test]
-    fn short_greetings_use_interactive_chat_route() {
-        assert!(is_simple_chat("Привет"));
-        assert!(is_simple_chat("hello, как дела?"));
-        assert!(is_simple_chat("почему так долго отвечаешь?"));
-        assert!(!is_simple_chat("Привет, исправь тесты"));
-        assert!(!is_simple_chat("Сделай аудит проекта"));
-        assert!(!is_simple_chat("/project /home/oleg"));
     }
 
     fn model(id: &str) -> ModelCapability {

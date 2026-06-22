@@ -1,11 +1,15 @@
-use std::{cell::RefCell, fs, path::Path};
+mod support;
 
-use gorsee_code_agent::{AgentRunError, ChatClient, TaskRunner};
-use gorsee_code_core::{EventKind, TaskSpec};
-use gorsee_code_neurogate::{ChatRequest, ChatResponse};
-use gorsee_code_safety::Redactor;
+use std::fs;
+
+use gorsee_code_agent::{AgentRunError, TaskRunner};
+use gorsee_code_core::{AgentRole, EventKind, TaskSpec};
+use gorsee_code_safety::{Redactor, RiskClass};
 use gorsee_code_session::{ApprovalDecision, ApprovalStatus, SessionStore};
-use serde_json::{json, Value};
+use serde_json::json;
+use support::{
+    agent_by_role, artifact_json, final_answer, init_git, only_session_id, MockClient, MockReply,
+};
 
 #[test]
 fn write_risk_tool_creates_pending_approval_and_waiting_manifest() {
@@ -18,7 +22,7 @@ fn write_risk_tool_creates_pending_approval_and_waiting_manifest() {
     let client = MockClient::new(vec![json!({
         "message": "prepare patch",
         "tool_calls": [{
-            "name": "propose_patch",
+            "name": "apply_patch",
             "args": { "path": "src/lib.rs", "content": "pub fn ok() {}" }
         }]
     })
@@ -26,7 +30,9 @@ fn write_risk_tool_creates_pending_approval_and_waiting_manifest() {
     let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
     let spec = TaskSpec::new("change code", temp.path().display().to_string());
 
-    let error = runner.run_sequential(&spec, &client).unwrap_err();
+    let error = runner
+        .run_sequential_with_agents(&spec, &client, vec![agent_by_role(AgentRole::Coder)])
+        .unwrap_err();
 
     let AgentRunError::WaitingApproval(approval_id) = error else {
         panic!("expected waiting approval, got {error:?}");
@@ -65,12 +71,12 @@ fn approval_events_redact_structured_tool_args_before_persisting() {
     )
     .unwrap();
     let client = MockClient::new(vec![json!({
-        "message": "prepare patch",
-        "tool_calls": [{
-            "name": "propose_patch",
-            "args": {
-                "path": "src/lib.rs",
-                "content": "pub fn ok() {}",
+            "message": "prepare patch",
+            "tool_calls": [{
+                "name": "apply_patch",
+                "args": {
+                    "path": "src/lib.rs",
+                    "content": "pub fn ok() {}",
                 "password": "plain-secret",
                 "headers": { "authorization": "Bearer abc.def" },
                 "nested": { "api_key": "k123", "token": "t123" }
@@ -81,7 +87,9 @@ fn approval_events_redact_structured_tool_args_before_persisting() {
     let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
     let spec = TaskSpec::new("change code", temp.path().display().to_string());
 
-    let error = runner.run_sequential(&spec, &client).unwrap_err();
+    let error = runner
+        .run_sequential_with_agents(&spec, &client, vec![agent_by_role(AgentRole::Coder)])
+        .unwrap_err();
     assert!(matches!(error, AgentRunError::WaitingApproval(_)));
 
     let session_id = only_session_id(temp.path());
@@ -107,6 +115,7 @@ fn approved_tool_resumes_and_finishes_the_interrupted_run() {
         "[package]\nname = \"sample\"\n",
     )
     .unwrap();
+    init_git(temp.path());
     let client = MockClient::new(vec![
         json!({
             "message": "write approved change",
@@ -125,7 +134,9 @@ fn approved_tool_resumes_and_finishes_the_interrupted_run() {
     let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
     let spec = TaskSpec::new("ship approved change", temp.path().display().to_string());
 
-    let error = runner.run_sequential(&spec, &client).unwrap_err();
+    let error = runner
+        .run_sequential_with_agents(&spec, &client, vec![agent_by_role(AgentRole::Coder)])
+        .unwrap_err();
     let AgentRunError::WaitingApproval(approval_id) = error else {
         panic!("expected waiting approval, got {error:?}");
     };
@@ -146,7 +157,7 @@ fn approved_tool_resumes_and_finishes_the_interrupted_run() {
     let written = fs::read_to_string(temp.path().join("src/lib.rs")).unwrap();
 
     assert_eq!(summary.session_id, session_id);
-    assert_eq!(manifest.status, "finished");
+    assert_eq!(manifest.status, "ready");
     assert!(written.contains("shipped"));
     assert!(events
         .iter()
@@ -154,9 +165,136 @@ fn approved_tool_resumes_and_finishes_the_interrupted_run() {
     assert!(events
         .iter()
         .any(|event| event.kind == EventKind::PatchApplied));
+    assert!(events.iter().any(|event| {
+        event.kind == EventKind::DiffReady
+            && event.payload["summary"]
+                .as_str()
+                .is_some_and(|summary| summary.contains("diff готов"))
+            && event.payload["artifact"] == "diff.json"
+    }));
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == EventKind::TestFinished));
+    let verification = artifact_json(&summary.artifacts, "verification.json");
+    assert_eq!(verification["status"], "skipped");
+    assert_eq!(verification["reason"], "verification tool was not run");
     assert!(events
         .iter()
+        .any(|event| event.kind == EventKind::TurnFinished));
+    assert!(!events
+        .iter()
         .any(|event| event.kind == EventKind::SessionFinished));
+}
+
+#[test]
+fn run_test_requires_command_approval() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"sample\"\n",
+    )
+    .unwrap();
+    let validator = agent_by_role(AgentRole::Validator);
+    let client = MockClient::new(vec![json!({
+        "message": "запускаю проверки",
+        "tool_calls": [{
+            "name": "run_test",
+            "args": { "command": ["cargo", "test", "--workspace"] }
+        }]
+    })
+    .to_string()]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("запусти тесты", temp.path().display().to_string());
+
+    let error = runner
+        .run_sequential_with_agents(&spec, &client, vec![validator])
+        .unwrap_err();
+
+    let AgentRunError::WaitingApproval(approval_id) = error else {
+        panic!("expected waiting approval, got {error:?}");
+    };
+    let session_id = only_session_id(temp.path());
+    let store = SessionStore::new(temp.path().join(".gorsee-code"), Redactor::default());
+    let approvals = store.pending_approvals(&session_id).unwrap();
+
+    assert_eq!(approvals.len(), 1);
+    assert_eq!(approvals[0].id, approval_id);
+    assert_eq!(approvals[0].tool_name, "run_test");
+    assert_eq!(approvals[0].risk, RiskClass::Command);
+    assert_eq!(approvals[0].status, ApprovalStatus::Pending);
+}
+
+#[test]
+fn empty_auto_run_test_without_detected_command_skips_without_approval() {
+    let temp = tempfile::tempdir().unwrap();
+    let validator = agent_by_role(AgentRole::Validator);
+    let client = MockClient::new(vec![
+        json!({
+            "message": "ищу проверки",
+            "tool_calls": [{
+                "name": "run_test",
+                "args": {}
+            }]
+        })
+        .to_string(),
+        final_answer("Проверки пропущены: подходящая команда не найдена."),
+    ]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("запусти проверки", temp.path().display().to_string());
+
+    let summary = runner
+        .run_sequential_with_agents(&spec, &client, vec![validator])
+        .unwrap();
+
+    let session_id = only_session_id(temp.path());
+    let store = SessionStore::new(temp.path().join(".gorsee-code"), Redactor::default());
+    let approvals = store.pending_approvals(&session_id).unwrap();
+    let verification = artifact_json(&summary.artifacts, "verification.json");
+
+    assert!(approvals.is_empty());
+    assert_eq!(verification["status"], "skipped");
+    assert_eq!(
+        verification["output"],
+        "no supported verification command detected"
+    );
+}
+
+#[test]
+fn unsupported_run_test_command_skips_without_approval() {
+    let temp = tempfile::tempdir().unwrap();
+    let validator = agent_by_role(AgentRole::Validator);
+    let client = MockClient::new(vec![
+        json!({
+            "message": "проверяю файл",
+            "tool_calls": [{
+                "name": "run_test",
+                "args": { "command": "cat hello.txt" }
+            }]
+        })
+        .to_string(),
+        final_answer("Команда не запускалась: cat не является тестовой командой."),
+    ]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("посмотри проект", temp.path().display().to_string());
+
+    runner
+        .run_sequential_with_agents(&spec, &client, vec![validator])
+        .unwrap();
+
+    let session_id = only_session_id(temp.path());
+    let store = SessionStore::new(temp.path().join(".gorsee-code"), Redactor::default());
+    let approvals = store.pending_approvals(&session_id).unwrap();
+    let events = store.read_events(&session_id).unwrap();
+
+    assert!(approvals.is_empty());
+    assert!(events.iter().any(|event| {
+        event.kind == EventKind::ToolFinished
+            && event.payload["name"] == "run_test"
+            && event.payload["status"] == "skipped"
+            && event.payload["output"]
+                .as_str()
+                .is_some_and(|output| output.contains("cat"))
+    }));
 }
 
 #[test]
@@ -193,7 +331,9 @@ fn approved_tool_resume_preserves_usage_from_pending_run() {
     let mut spec = TaskSpec::new("ship approved change", temp.path().display().to_string());
     spec.budget_tokens = 100;
 
-    let error = runner.run_sequential(&spec, &client).unwrap_err();
+    let error = runner
+        .run_sequential_with_agents(&spec, &client, vec![agent_by_role(AgentRole::Coder)])
+        .unwrap_err();
     let AgentRunError::WaitingApproval(approval_id) = error else {
         panic!("expected waiting approval, got {error:?}");
     };
@@ -219,87 +359,4 @@ fn approved_tool_resume_preserves_usage_from_pending_run() {
 
     let usage = artifact_json(&summary.artifacts, "usage.json");
     assert_eq!(usage["tokens_used"], 80);
-}
-
-fn only_session_id(root: &std::path::Path) -> String {
-    let mut sessions = fs::read_dir(root.join(".gorsee-code").join("sessions"))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .collect::<Vec<_>>();
-    sessions.sort();
-    assert_eq!(sessions.len(), 1);
-    sessions.pop().unwrap()
-}
-
-fn final_answer(answer: &str) -> String {
-    json!({
-        "message": answer,
-        "final_answer": answer
-    })
-    .to_string()
-}
-
-#[derive(Debug, Clone)]
-struct MockReply {
-    content: String,
-    usage: Option<Value>,
-}
-
-impl MockReply {
-    fn content(content: String) -> Self {
-        Self {
-            content,
-            usage: None,
-        }
-    }
-
-    fn with_usage(content: String, usage: Value) -> Self {
-        Self {
-            content,
-            usage: Some(usage),
-        }
-    }
-}
-
-struct MockClient {
-    replies: RefCell<Vec<MockReply>>,
-}
-
-impl MockClient {
-    fn new(replies: Vec<String>) -> Self {
-        Self::with_replies(replies.into_iter().map(MockReply::content).collect())
-    }
-
-    fn with_replies(replies: Vec<MockReply>) -> Self {
-        Self {
-            replies: RefCell::new(replies.into_iter().rev().collect()),
-        }
-    }
-}
-
-impl ChatClient for MockClient {
-    fn complete(
-        &self,
-        _request: &ChatRequest,
-    ) -> Result<ChatResponse, gorsee_code_agent::AgentRunError> {
-        let reply = self.replies.borrow_mut().pop().unwrap();
-        Ok(ChatResponse {
-            id: Some("mock".into()),
-            object: Some("chat.completion".into()),
-            choices: Some(vec![json!({ "message": { "content": reply.content } })]),
-            usage: reply.usage,
-        })
-    }
-}
-
-fn artifact_json(artifacts: &[gorsee_code_artifacts::ArtifactRecord], name: &str) -> Value {
-    let artifact = artifacts
-        .iter()
-        .find(|artifact| {
-            Path::new(&artifact.path)
-                .file_name()
-                .is_some_and(|file| file == name)
-        })
-        .unwrap_or_else(|| panic!("missing {name}"));
-    serde_json::from_str(&fs::read_to_string(&artifact.path).unwrap()).unwrap()
 }

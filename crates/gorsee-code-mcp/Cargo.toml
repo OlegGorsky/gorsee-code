@@ -1,0 +1,23 @@
+[package]
+name = "gorsee-code-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rmcp = { workspace = true, features = ["macros", "server", "transport-io"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "gorsee-mcp-fixture"
+path = "tests/fixtures/mcp_fixture.rs"
+test = false

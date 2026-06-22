@@ -54,7 +54,7 @@ fn event_line(event: &EventView) -> String {
         .as_deref()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| event.kind.clone());
-    format!("#{:04} {} · {}", event.sequence, actor, event.summary)
+    format!("{actor} · {}", event.summary)
 }
 
 fn selected_text(

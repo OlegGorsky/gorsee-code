@@ -83,8 +83,14 @@ fn agents(state: &WorkspaceState) -> String {
     let mut out = "agents:\n".to_string();
     for agent in &state.agents {
         out.push_str(&format!(
-            "- {} role={} status={} model={} tokens={}/{}\n",
-            agent.id, agent.role, agent.status, agent.model, agent.tokens_used, agent.tokens_limit
+            "- {} role={} status={} model={} tokens={}/{} cached={}\n",
+            agent.id,
+            agent.role,
+            agent.status,
+            agent.model,
+            agent.tokens_used,
+            agent.tokens_limit,
+            agent.cached_tokens
         ));
     }
     out
@@ -106,10 +112,11 @@ fn approvals(state: &WorkspaceState) -> String {
 
 fn budget(state: &WorkspaceState) -> String {
     format!(
-        "budget: {}/{} tokens ({:.1}%) status={}\n",
+        "budget: {}/{} tokens ({:.1}%) cached={} status={}\n",
         state.budget.used_tokens,
         state.budget.limit_tokens,
         state.budget.percent_used,
+        state.budget.cached_tokens,
         budget_status(state)
     )
 }
@@ -137,10 +144,7 @@ fn timeline(state: &WorkspaceState) -> String {
     let mut out = "timeline:\n".to_string();
     for event in &state.timeline {
         let agent = event.agent_id.as_deref().unwrap_or(&event.kind);
-        out.push_str(&format!(
-            "- #{:04} {}: {}\n",
-            event.sequence, agent, event.summary
-        ));
+        out.push_str(&format!("- {}: {}\n", agent, event.summary));
     }
     out
 }

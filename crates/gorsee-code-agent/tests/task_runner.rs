@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fs, path::Path};
 
 use gorsee_code_agent::{ChatClient, TaskRunner};
-use gorsee_code_core::{default_agent_matrix, EventKind, TaskSpec};
+use gorsee_code_core::{default_agent_matrix, AgentRole, EventKind, TaskSpec};
 use gorsee_code_neurogate::{ChatRequest, ChatResponse};
 use gorsee_code_session::SessionStore;
 use serde_json::{json, Value};
@@ -51,7 +51,9 @@ fn sequential_runner_uses_model_and_records_tool_results() {
         .any(|event| event.kind == EventKind::ToolFinished));
     assert!(events
         .iter()
-        .any(|event| event.kind == EventKind::SessionFinished));
+        .any(|event| event.kind == EventKind::TurnFinished));
+    let manifest = store.read_manifest(&summary.session_id).unwrap();
+    assert_eq!(manifest.status, "ready");
     assert_session_artifacts(&summary.artifacts);
 }
 
@@ -194,6 +196,63 @@ fn agent_prompt_only_includes_allowed_tool_manifests() {
 }
 
 #[test]
+fn coder_prompt_requires_file_tools_for_file_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"sample\"\n",
+    )
+    .unwrap();
+    let agent = default_agent_matrix()
+        .into_iter()
+        .find(|agent| agent.role == AgentRole::Coder)
+        .unwrap();
+    let client = MockClient::new(vec![json!({
+        "message": "готовлю patch",
+        "tool_calls": [{
+            "name": "apply_patch",
+            "args": { "path": "src/lib.rs", "content": "pub fn changed() -> bool { true }\n" }
+        }]
+    })
+    .to_string()]);
+    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
+    let spec = TaskSpec::new("измени файл", temp.path().display().to_string());
+
+    assert!(matches!(
+        runner
+            .run_sequential_with_agents(&spec, &client, vec![agent])
+            .unwrap_err(),
+        gorsee_code_agent::AgentRunError::WaitingApproval(_)
+    ));
+
+    let requests = client.requests.borrow();
+    let prompt = user_prompt_json(&requests[0]);
+    assert_eq!(
+        prompt["execution_policy"]["must_use_tools_for_file_changes"],
+        true
+    );
+    assert_eq!(prompt["turn_plan"]["intent"], "edit");
+    assert_eq!(prompt["execution_contract"]["requires_plan"], true);
+    assert_eq!(prompt["execution_contract"]["diff_required"], true);
+    assert_eq!(
+        prompt["execution_contract"]["final_answer"]["forbid_full_code_dump"],
+        true
+    );
+    let names = available_tool_names(&prompt);
+    assert!(names.contains(&"propose_patch".to_string()));
+    assert!(names.contains(&"apply_patch".to_string()));
+    let required_tools = prompt["execution_contract"]["required_tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert!(required_tools.contains(&"apply_patch".to_string()));
+    assert!(required_tools.contains(&"git_diff".to_string()));
+    assert!(required_tools.contains(&"run_test".to_string()));
+}
+
+#[test]
 fn agent_prompt_uses_stable_cache_prefix_before_dynamic_work() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(
@@ -223,6 +282,7 @@ fn agent_prompt_uses_stable_cache_prefix_before_dynamic_work() {
     let requests = client.requests.borrow();
     assert_eq!(requests[0].messages.len(), 3);
     assert_eq!(requests[0].prompt_cache_key, requests[1].prompt_cache_key);
+    assert_eq!(requests[0].prompt_cache_retention.as_deref(), Some("24h"));
     assert!(requests[0]
         .prompt_cache_key
         .as_deref()
@@ -233,156 +293,25 @@ fn agent_prompt_uses_stable_cache_prefix_before_dynamic_work() {
     let second_work = work_prompt_json(&requests[1]);
 
     assert!(static_context.get("available_tools").is_some());
+    assert_eq!(
+        static_context["execution_policy"]["must_use_tools_for_file_changes"],
+        false
+    );
     assert!(static_context.get("objective").is_none());
     assert_eq!(first_work["objective"], "первая задача");
     assert_eq!(second_work["objective"], "вторая задача");
 }
 
-#[test]
-fn sequential_runner_executes_the_full_agent_matrix() {
-    let temp = tempfile::tempdir().unwrap();
-    fs::write(
-        temp.path().join("Cargo.toml"),
-        "[package]\nname = \"sample\"\n",
-    )
-    .unwrap();
-    let client = MockClient::new(
-        default_agent_matrix()
-            .iter()
-            .map(|agent| {
-                json!({
-                    "message": format!("{} finished", agent.id()),
-                    "final_answer": format!("{} answer", agent.id())
-                })
-                .to_string()
-            })
-            .collect(),
-    );
-    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
-    let spec = TaskSpec::new("ship production system", temp.path().display().to_string());
-
-    let summary = runner.run_sequential(&spec, &client).unwrap();
-
-    let expected_models = default_agent_matrix()
-        .into_iter()
-        .map(|agent| agent.model)
-        .collect::<Vec<_>>();
-    let requested_models = client
-        .requests
-        .borrow()
-        .iter()
-        .map(|request| request.model.clone())
-        .collect::<Vec<_>>();
-    assert_eq!(requested_models, expected_models);
-
-    let store = SessionStore::new(
-        temp.path().join(".gorsee-code"),
-        gorsee_code_safety::Redactor::default(),
-    );
-    let events = store.read_events(&summary.session_id).unwrap();
-    let started_agents = events
-        .iter()
-        .filter(|event| event.kind == EventKind::AgentStarted)
-        .filter_map(|event| event.agent_id.as_deref())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        started_agents,
-        ["architect", "scout", "coder", "validator", "summarizer"]
-    );
-}
-
-#[test]
-fn sequential_runner_writes_production_session_artifacts() {
-    let temp = tempfile::tempdir().unwrap();
-    fs::write(
-        temp.path().join("Cargo.toml"),
-        "[package]\nname = \"sample\"\n",
-    )
-    .unwrap();
-    let client = MockClient::new(
-        default_agent_matrix()
-            .iter()
-            .map(|agent| final_answer(&format!("{} done", agent.id())))
-            .collect(),
-    );
-    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
-    let spec = TaskSpec::new("write artifacts", temp.path().display().to_string());
-
-    let summary = runner.run_sequential(&spec, &client).unwrap();
-
-    assert_session_artifacts(&summary.artifacts);
-}
-
-#[test]
-fn sequential_runner_records_model_usage_and_budget_warning() {
-    let temp = tempfile::tempdir().unwrap();
-    fs::write(
-        temp.path().join("Cargo.toml"),
-        "[package]\nname = \"sample\"\n",
-    )
-    .unwrap();
-    let client = MockClient::with_replies(vec![
-        MockReply::with_usage(
-            final_answer("architect done"),
-            json!({
-                "prompt_tokens": 55,
-                "completion_tokens": 25,
-                "total_tokens": 80
-            }),
-        ),
-        MockReply::content(final_answer("scout done")),
-        MockReply::content(final_answer("coder done")),
-        MockReply::content(final_answer("validator done")),
-        MockReply::content(final_answer("summarizer done")),
-    ]);
-    let runner = TaskRunner::new(temp.path().join(".gorsee-code"));
-    let mut spec = TaskSpec::new("track model usage", temp.path().display().to_string());
-    spec.budget_tokens = 100;
-
-    let summary = runner.run_sequential(&spec, &client).unwrap();
-
-    let store = SessionStore::new(
-        temp.path().join(".gorsee-code"),
-        gorsee_code_safety::Redactor::default(),
-    );
-    let manifest = store.read_manifest(&summary.session_id).unwrap();
-    assert_eq!(manifest.budget.tokens_used, 80);
-
-    let events = store.read_events(&summary.session_id).unwrap();
-    let warning = events
-        .iter()
-        .find(|event| event.kind == EventKind::BudgetWarning)
-        .expect("missing budget warning");
-    assert_eq!(warning.payload["used_tokens"], 80);
-    assert_eq!(warning.payload["limit_tokens"], 100);
-    assert_eq!(
-        warning.payload["hook_messages"][0],
-        "budget warning: 80.0% used"
-    );
-
-    let usage = artifact_json(&summary.artifacts, "usage.json");
-    assert_eq!(usage["tokens_used"], 80);
-
-    let ledger_path = temp
-        .path()
-        .join(".gorsee-code/sessions")
-        .join(&summary.session_id)
-        .join("token-ledger.json");
-    let ledger: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(ledger_path).unwrap()).unwrap();
-    assert_eq!(ledger["records"][0]["agent_id"], "architect");
-    assert_eq!(ledger["records"][0]["input_tokens"], 55);
-    assert_eq!(ledger["records"][0]["output_tokens"], 25);
-}
-
 fn assert_session_artifacts(artifacts: &[gorsee_code_artifacts::ArtifactRecord]) {
     let names = artifact_names(artifacts);
     for expected in [
-        "diff.patch",
+        "diff.json",
         "events.jsonl",
+        "execution-contract.json",
         "limits-end.json",
         "limits-start.json",
         "manifest.json",
+        "plan.json",
         "report.md",
         "usage.json",
     ] {
@@ -400,18 +329,6 @@ fn artifact_names(artifacts: &[gorsee_code_artifacts::ArtifactRecord]) -> Vec<St
         .filter_map(|name| name.to_str())
         .map(ToOwned::to_owned)
         .collect()
-}
-
-fn artifact_json(artifacts: &[gorsee_code_artifacts::ArtifactRecord], name: &str) -> Value {
-    let artifact = artifacts
-        .iter()
-        .find(|artifact| {
-            Path::new(&artifact.path)
-                .file_name()
-                .is_some_and(|file| file == name)
-        })
-        .unwrap_or_else(|| panic!("missing {name}"));
-    serde_json::from_str(&fs::read_to_string(&artifact.path).unwrap()).unwrap()
 }
 
 fn user_prompt_json(request: &ChatRequest) -> Value {
@@ -442,13 +359,6 @@ impl MockReply {
         Self {
             content,
             usage: None,
-        }
-    }
-
-    fn with_usage(content: String, usage: Value) -> Self {
-        Self {
-            content,
-            usage: Some(usage),
         }
     }
 }

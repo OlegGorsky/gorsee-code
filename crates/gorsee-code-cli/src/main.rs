@@ -19,9 +19,18 @@ fn main() -> Result<()> {
 }
 
 fn prompt_for_key_if_needed(args: &[OsString], options: &CliOptions) -> Result<()> {
-    if !opens_interactive_tui(args)
-        || auth::api_key(&options.root, options.env_key.as_deref())?.is_some()
-    {
+    if !opens_interactive_tui(args) {
+        return Ok(());
+    }
+
+    if let Some(key) = auth::api_key_at(
+        &options.root,
+        options.env_key.as_deref(),
+        options.global_auth_path.as_deref(),
+    )? {
+        if options.env_key.is_none() {
+            auth::set_global_at(options.global_auth_path.as_deref(), &key)?;
+        }
         return Ok(());
     }
 
@@ -29,6 +38,7 @@ fn prompt_for_key_if_needed(args: &[OsString], options: &CliOptions) -> Result<(
     let key = key.trim();
     if !key.is_empty() {
         auth::set(&options.root, key)?;
+        auth::set_global_at(options.global_auth_path.as_deref(), key)?;
     }
     Ok(())
 }

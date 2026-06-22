@@ -1,19 +1,19 @@
+use gorsee_code_coding_core::{ExecutionContract, TurnPlan};
 use gorsee_code_core::{AgentProfile, EventKind, TaskSpec};
 use gorsee_code_session::ApprovalDecision;
-use gorsee_code_tool_runtime::{ToolManifest, ToolRegistry};
+use gorsee_code_tool_runtime::ToolRegistry;
 use gorsee_code_usage::UsageRecord;
 use serde_json::json;
 
 use crate::{
+    agent_tools::{allowed_manifests, run_decided_tool, run_tools_until_wait, ToolBatch},
     budget_events::usage_record_from_response,
     client::ChatClient,
     events::EventSink,
+    final_policy::final_answer_policy_retry,
     prompts::PromptContext,
     protocol::{parse_response, AgentAnswer, ModelToolCall, ToolResult},
-    tool_events::{
-        record_approval_event, record_message, record_patch_applied, record_patch_proposal,
-        record_tool_failure, record_tool_request, record_tool_success, redact_args,
-    },
+    tool_events::record_message,
     AgentRunError,
 };
 
@@ -46,6 +46,8 @@ pub(crate) struct AgentRunContext<'a, C: ChatClient> {
     pub(crate) registry: &'a ToolRegistry,
     pub(crate) previous_answers: &'a [AgentAnswer],
     pub(crate) previous_tool_results: &'a [ToolResult],
+    pub(crate) turn_plan: Option<&'a TurnPlan>,
+    pub(crate) execution_contract: &'a ExecutionContract,
 }
 
 pub(crate) fn run_agent<C: ChatClient>(
@@ -64,10 +66,12 @@ pub(crate) fn resume_agent<C: ChatClient>(
 ) -> Result<AgentOutcome, AgentRunError> {
     let mut tool_results = pending.tool_results;
     let usage_records = pending.usage_records;
+    let manifests = allowed_manifests(context.agent, context.registry);
     let result = run_decided_tool(
         sink,
         context.agent,
         context.registry,
+        &manifests,
         &pending.pending_call,
         &pending.approval_id,
         decision,
@@ -77,10 +81,13 @@ pub(crate) fn resume_agent<C: ChatClient>(
         sink,
         context.agent,
         context.registry,
+        &manifests,
         ToolBatch {
+            repo_path: &context.spec.repo_path,
             step: pending.step,
             calls: pending.remaining_calls,
             final_answer: pending.final_answer.clone(),
+            previous_results: context.previous_tool_results,
             results: &mut tool_results,
             usage_records: &usage_records,
         },
@@ -88,6 +95,18 @@ pub(crate) fn resume_agent<C: ChatClient>(
         return Ok(AgentOutcome::Waiting(waiting));
     }
     if let Some(answer) = pending.final_answer {
+        if let Some(policy_feedback) = final_answer_policy_retry(
+            context.agent,
+            &context.spec.objective,
+            &manifests,
+            context.previous_tool_results,
+            &tool_results,
+            &answer,
+            context.execution_contract,
+        ) {
+            tool_results.push(policy_feedback);
+            return continue_agent(context, sink, pending.step + 1, tool_results, usage_records);
+        }
         record_message(sink, context.agent, Some(&answer))?;
         return Ok(finished(context.agent, answer, tool_results, usage_records));
     }
@@ -111,6 +130,8 @@ fn continue_agent<C: ChatClient>(
             previous_answers: context.previous_answers,
             previous_tool_results: context.previous_tool_results,
             results: &tool_results,
+            turn_plan: context.turn_plan,
+            execution_contract: context.execution_contract,
             step,
         });
         let response = context.client.complete(&request)?;
@@ -122,10 +143,13 @@ fn continue_agent<C: ChatClient>(
             sink,
             context.agent,
             context.registry,
+            &manifests,
             ToolBatch {
+                repo_path: &context.spec.repo_path,
                 step,
                 calls: turn.tool_calls,
                 final_answer: turn.final_answer.clone(),
+                previous_results: context.previous_tool_results,
                 results: &mut tool_results,
                 usage_records: &usage_records,
             },
@@ -133,6 +157,18 @@ fn continue_agent<C: ChatClient>(
             return Ok(AgentOutcome::Waiting(waiting));
         }
         if let Some(answer) = turn.final_answer {
+            if let Some(policy_feedback) = final_answer_policy_retry(
+                context.agent,
+                &context.spec.objective,
+                &manifests,
+                context.previous_tool_results,
+                &tool_results,
+                &answer,
+                context.execution_contract,
+            ) {
+                tool_results.push(policy_feedback);
+                continue;
+            }
             record_message(sink, context.agent, Some(&answer))?;
             return Ok(finished(context.agent, answer, tool_results, usage_records));
         }
@@ -156,39 +192,6 @@ fn finished(
     }
 }
 
-fn allowed_manifests(agent: &AgentProfile, registry: &ToolRegistry) -> Vec<ToolManifest> {
-    if agent.tools.is_empty() {
-        return Vec::new();
-    }
-    registry
-        .manifests()
-        .into_iter()
-        .filter(|manifest| agent.tools.iter().any(|tool| tool_matches(tool, manifest)))
-        .collect()
-}
-
-fn tool_matches(tool: &str, manifest: &ToolManifest) -> bool {
-    manifest.name == tool
-        || manifest.capabilities.iter().any(|capability| {
-            capability == tool || grouped_tool_matches(tool, &manifest.name, capability)
-        })
-}
-
-fn grouped_tool_matches(tool: &str, name: &str, capability: &str) -> bool {
-    match tool {
-        "read" => matches!(
-            capability,
-            "files:list" | "files:read" | "git:status" | "git:recent"
-        ),
-        "search" => capability == "files:search",
-        "repo_map" => capability == "context:repo_map",
-        "diff" => capability == "git:diff",
-        "propose_patch" => matches!(name, "propose_patch" | "apply_patch"),
-        "run_test" => capability == "tests:run",
-        _ => false,
-    }
-}
-
 fn start_agent(sink: &mut EventSink<'_>, agent: &AgentProfile) -> Result<(), AgentRunError> {
     sink.push(
         Some(agent.id()),
@@ -196,139 +199,4 @@ fn start_agent(sink: &mut EventSink<'_>, agent: &AgentProfile) -> Result<(), Age
         json!({ "model": agent.model, "reasoning": agent.reasoning }),
     )?;
     Ok(())
-}
-
-fn run_tools_until_wait(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    registry: &ToolRegistry,
-    batch: ToolBatch<'_>,
-) -> Result<Option<PendingApproval>, AgentRunError> {
-    let ToolBatch {
-        step,
-        calls,
-        final_answer,
-        results,
-        usage_records,
-    } = batch;
-
-    for index in 0..calls.len() {
-        let call = &calls[index];
-        match run_tool(sink, agent, registry, call)? {
-            ToolRunOutcome::Finished(result) => results.push(result),
-            ToolRunOutcome::Waiting(approval_id) => {
-                return Ok(Some(PendingApproval {
-                    approval_id,
-                    step,
-                    pending_call: call.clone(),
-                    remaining_calls: calls[index + 1..].to_vec(),
-                    final_answer,
-                    tool_results: results.clone(),
-                    usage_records: usage_records.to_vec(),
-                }));
-            }
-        }
-    }
-    Ok(None)
-}
-
-struct ToolBatch<'a> {
-    step: usize,
-    calls: Vec<ModelToolCall>,
-    final_answer: Option<String>,
-    results: &'a mut Vec<ToolResult>,
-    usage_records: &'a [UsageRecord],
-}
-
-enum ToolRunOutcome {
-    Finished(ToolResult),
-    Waiting(String),
-}
-
-fn run_tool(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    registry: &ToolRegistry,
-    call: &ModelToolCall,
-) -> Result<ToolRunOutcome, AgentRunError> {
-    if let Some(approval_id) = request_approval_if_needed(sink, agent, registry, call)? {
-        return Ok(ToolRunOutcome::Waiting(approval_id));
-    }
-    record_tool_request(sink, agent, call, None, None)?;
-    sink.push(
-        Some(agent.id()),
-        EventKind::ToolStarted,
-        json!({ "name": call.name }),
-    )?;
-    let result = match registry.run(&call.name, call.args.clone()) {
-        Ok(output) => record_tool_success(sink, agent, call, output.text),
-        Err(error) => record_tool_failure(sink, agent, call, error),
-    }?;
-    Ok(ToolRunOutcome::Finished(result))
-}
-
-fn run_decided_tool(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    registry: &ToolRegistry,
-    call: &ModelToolCall,
-    approval_id: &str,
-    decision: ApprovalDecision,
-) -> Result<ToolResult, AgentRunError> {
-    match decision {
-        ApprovalDecision::Approved => run_approved_tool(sink, agent, registry, call, approval_id),
-        ApprovalDecision::Denied => record_denied_tool(sink, agent, call, approval_id),
-    }
-}
-
-fn run_approved_tool(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    registry: &ToolRegistry,
-    call: &ModelToolCall,
-    approval_id: &str,
-) -> Result<ToolResult, AgentRunError> {
-    record_approval_event(sink, agent, call, approval_id, EventKind::ToolApproved)?;
-    sink.push(
-        Some(agent.id()),
-        EventKind::ToolStarted,
-        json!({ "name": call.name, "approval_id": approval_id }),
-    )?;
-    let result = match registry.run_approved(&call.name, call.args.clone()) {
-        Ok(output) => record_tool_success(sink, agent, call, output.text),
-        Err(error) => record_tool_failure(sink, agent, call, error),
-    }?;
-    record_patch_applied(sink, agent, call, approval_id)?;
-    Ok(result)
-}
-
-fn record_denied_tool(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    call: &ModelToolCall,
-    approval_id: &str,
-) -> Result<ToolResult, AgentRunError> {
-    record_approval_event(sink, agent, call, approval_id, EventKind::ToolDenied)?;
-    let result = ToolResult::failure(agent.id(), call.name.clone(), "denied by user");
-    Ok(result)
-}
-
-fn request_approval_if_needed(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    registry: &ToolRegistry,
-    call: &ModelToolCall,
-) -> Result<Option<String>, AgentRunError> {
-    let Some(manifest) = registry.approval_required(&call.name)? else {
-        return Ok(None);
-    };
-    let approval = sink.create_approval(
-        agent.id(),
-        &call.name,
-        redact_args(&call.args),
-        manifest.risk,
-    )?;
-    record_tool_request(sink, agent, call, Some(&approval.id), Some(manifest.risk))?;
-    record_patch_proposal(sink, agent, call, &approval.id)?;
-    Ok(Some(approval.id))
 }

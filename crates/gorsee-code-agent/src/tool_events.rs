@@ -1,6 +1,6 @@
 use gorsee_code_core::{AgentProfile, EventKind};
 use gorsee_code_safety::RiskClass;
-use gorsee_code_tool_runtime::ToolRuntimeError;
+use gorsee_code_tool_runtime::{ToolOutput, ToolRuntimeError};
 use serde_json::{json, Value};
 
 use crate::{
@@ -59,14 +59,17 @@ pub(crate) fn record_tool_success(
     sink: &mut EventSink<'_>,
     agent: &AgentProfile,
     call: &ModelToolCall,
-    text: String,
+    output: ToolOutput,
 ) -> Result<ToolResult, AgentRunError> {
-    sink.push(
-        Some(agent.id()),
-        EventKind::ToolFinished,
-        json!({ "name": call.name, "output": text }),
-    )?;
-    Ok(ToolResult::success(agent.id(), call.name.clone(), text))
+    let ok = output_status_ok(&output).unwrap_or(true);
+    let payload = tool_finished_payload(call, &output);
+    sink.push(Some(agent.id()), EventKind::ToolFinished, payload)?;
+    Ok(ToolResult::output(
+        agent.id(),
+        call.name.clone(),
+        ok,
+        output,
+    ))
 }
 
 pub(crate) fn record_patch_applied(
@@ -136,6 +139,29 @@ pub(crate) fn redact_args(value: &Value) -> Value {
     }
 }
 
+fn tool_finished_payload(call: &ModelToolCall, output: &ToolOutput) -> Value {
+    let mut payload = json!({
+        "name": call.name,
+        "output": output.text,
+        "truncated": output.truncated,
+    });
+    if let Some(json_value) = &output.json {
+        if let Some(status) = json_value.get("status").and_then(Value::as_str) {
+            payload["status"] = Value::String(status.to_string());
+        }
+        if let Some(exit_status) = json_value.get("exit_status") {
+            payload["exit_status"] = exit_status.clone();
+        }
+        payload["json"] = json_value.clone();
+    }
+    payload
+}
+
+fn output_status_ok(output: &ToolOutput) -> Option<bool> {
+    let status = output.json.as_ref()?.get("status")?.as_str()?;
+    Some(!matches!(status, "failed" | "error"))
+}
+
 fn is_secret_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     [
@@ -149,4 +175,87 @@ fn is_secret_key(key: &str) -> bool {
     ]
     .iter()
     .any(|needle| key.contains(needle))
+}
+
+#[cfg(test)]
+mod tests {
+    use gorsee_code_core::{AgentProfile, AgentRole, EventKind};
+    use gorsee_code_safety::Redactor;
+    use gorsee_code_session::{SessionManifest, SessionStore};
+    use gorsee_code_tool_runtime::ToolOutput;
+    use serde_json::json;
+
+    use crate::{events::EventSink, protocol::ModelToolCall};
+
+    use super::*;
+
+    #[test]
+    fn tool_success_preserves_structured_json_result() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(temp.path(), Redactor::default());
+        store
+            .create(&SessionManifest::new("s1", "/repo", "main"))
+            .unwrap();
+        let mut sink = EventSink::new(&store, "s1".into());
+        let call = ModelToolCall {
+            name: "git_diff".into(),
+            args: json!({}),
+        };
+        let output = ToolOutput {
+            text: "files_changed=1".into(),
+            json: Some(json!({ "diff": { "summary": { "files_changed": 1 } } })),
+            truncated: false,
+        };
+
+        let result = record_tool_success(&mut sink, &agent(), &call, output).unwrap();
+
+        assert_eq!(
+            result.json.as_ref().unwrap()["diff"]["summary"]["files_changed"],
+            1
+        );
+        assert!(result.ok);
+        let events = store.read_events("s1").unwrap();
+        let event = events
+            .iter()
+            .find(|event| event.kind == EventKind::ToolFinished)
+            .unwrap();
+        assert_eq!(event.payload["json"]["diff"]["summary"]["files_changed"], 1);
+    }
+
+    #[test]
+    fn failed_structured_tool_status_marks_result_not_ok() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(temp.path(), Redactor::default());
+        store
+            .create(&SessionManifest::new("s1", "/repo", "main"))
+            .unwrap();
+        let mut sink = EventSink::new(&store, "s1".into());
+        let call = ModelToolCall {
+            name: "run_test".into(),
+            args: json!({}),
+        };
+        let output = ToolOutput {
+            text: "tests failed".into(),
+            json: Some(json!({ "status": "failed", "exit_status": 101 })),
+            truncated: false,
+        };
+
+        let result = record_tool_success(&mut sink, &agent(), &call, output).unwrap();
+
+        assert!(!result.ok);
+        let event = store.read_events("s1").unwrap().pop().unwrap();
+        assert_eq!(event.payload["status"], "failed");
+        assert_eq!(event.payload["exit_status"], 101);
+    }
+
+    fn agent() -> AgentProfile {
+        AgentProfile {
+            role: AgentRole::Validator,
+            model: "test".into(),
+            reasoning: "low".into(),
+            tools: vec!["diff".into()],
+            budget_tokens: 1000,
+            temperature: 0.0,
+        }
+    }
 }

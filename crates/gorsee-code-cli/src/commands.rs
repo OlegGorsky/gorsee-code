@@ -13,9 +13,10 @@ use crate::commands_extra::{
     resolve_session_id, run_skill, session_ids, tools, usage,
 };
 use crate::{
-    approval_commands,
+    acp_commands, approval_commands,
     args::{
-        AuthCommand, BudgetCommand, Cli, Command, SessionIdArgs, SessionsCommand, SkillsCommand,
+        AcpCommand, AuthCommand, BudgetCommand, Cli, Command, SessionIdArgs, SessionsCommand,
+        SkillsCommand,
     },
     auth, budget_commands, checkpoint_commands, limit_commands, live, model_commands, mouse_debug,
     paths, project_commands, protection_commands, route_commands, session_commands,
@@ -26,17 +27,34 @@ pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
     match cli.command {
         None => render_workspace_tui(&options.root),
         Some(Command::Init) => project_commands::init(&options.root),
-        Some(Command::Setup) => project_commands::setup(&options.root, options.env_key.as_deref()),
-        Some(Command::Auth(args)) => {
-            run_auth(&options.root, args.command, options.env_key.as_deref())
-        }
-        Some(Command::Doctor) => doctor(&options.root, options.env_key.as_deref()),
-        Some(Command::Models(args)) => {
-            model_commands::run(&options.root, options.env_key.as_deref(), args)
-        }
-        Some(Command::Limits(args)) => {
-            limit_commands::run(&options.root, options.env_key.as_deref(), args)
-        }
+        Some(Command::Setup) => project_commands::setup(
+            &options.root,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+        ),
+        Some(Command::Auth(args)) => run_auth(
+            &options.root,
+            args.command,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+        ),
+        Some(Command::Doctor) => doctor(
+            &options.root,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+        ),
+        Some(Command::Models(args)) => model_commands::run(
+            &options.root,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+            args,
+        ),
+        Some(Command::Limits(args)) => limit_commands::run(
+            &options.root,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+            args,
+        ),
         Some(Command::Sessions(args)) => match args.command.unwrap_or(SessionsCommand::List) {
             SessionsCommand::List => sessions(&options.root),
         },
@@ -48,27 +66,48 @@ pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
             &approval_id,
             ApprovalDecision::Approved,
             options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
         ),
         Some(Command::Deny { approval_id }) => approval_commands::decide(
             &options.root,
             &approval_id,
             ApprovalDecision::Denied,
             options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
         ),
         Some(Command::Replay(args)) => replay(&options.root, args),
         Some(Command::Export(args)) => export(&options.root, args),
         Some(Command::Gateway(args)) => gateway(&options.root, &args.bind),
+        Some(Command::Acp(args)) => match args.command {
+            Some(AcpCommand::Plan(args)) => acp_commands::plan(&options.root, args),
+            Some(AcpCommand::Run(args)) => acp_commands::run(
+                &options.root,
+                args,
+                options.env_key.as_deref(),
+                options.global_auth_path.as_deref(),
+            ),
+            Some(AcpCommand::Stdio) => acp_commands::stdio(
+                &options.root,
+                options.env_key.as_deref(),
+                options.global_auth_path.as_deref(),
+            ),
+            None => acp_commands::status(),
+        },
         Some(Command::MouseDebug) => {
             mouse_debug::run()?;
             Ok(String::new())
         }
         Some(Command::Tui) => render_workspace_tui(&options.root),
-        Some(Command::Skills(args)) => {
-            skills(&options.root, args.command, options.env_key.as_deref())
-        }
+        Some(Command::Skills(args)) => skills(
+            &options.root,
+            args.command,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+        ),
         Some(Command::Agents) => agents(),
         Some(Command::Usage) => usage(&options.root),
         Some(Command::Tools) => tools(&options.root),
+        Some(Command::Mcp) => crate::tui_commands::mcp(&options.root),
         Some(Command::Files) => files(&options.root),
         Some(Command::Diff) => diff(&options.root),
         Some(Command::Route(args)) => route_commands::explain(&options.root, args),
@@ -79,20 +118,39 @@ pub fn run(cli: Cli, options: CliOptions) -> Result<String> {
         Some(Command::Checkpoint) => checkpoint_commands::save(&options.root),
         Some(Command::Uninstall(args)) => uninstall_commands::run(&options.root, args),
         Some(Command::Hooks) => hooks(),
-        Some(Command::Capabilities) => capabilities(&options.root, options.env_key.as_deref()),
+        Some(Command::Capabilities) => capabilities(
+            &options.root,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+        ),
         Some(Command::Reset { yes }) => project_commands::reset(&options.root, yes),
-        Some(Command::Exec(args)) => execute(&options.root, args, options.env_key.as_deref()),
+        Some(Command::Exec(args)) => execute(
+            &options.root,
+            args,
+            options.env_key.as_deref(),
+            options.global_auth_path.as_deref(),
+        ),
     }
 }
 
-fn run_auth(root: &Path, command: AuthCommand, env_key: Option<&str>) -> Result<String> {
+fn run_auth(
+    root: &Path,
+    command: AuthCommand,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
     match command {
         AuthCommand::Set { api_key } => {
             let api_key = resolve_auth_set_key(api_key, env_key)?;
             let status = auth::set(root, &api_key)?;
+            auth::set_global_at(global_auth_path, &api_key)?;
             Ok(auth::render_status(&status))
         }
-        AuthCommand::Status => Ok(auth::render_status(&auth::status(root, env_key)?)),
+        AuthCommand::Status => Ok(auth::render_status(&auth::status_at(
+            root,
+            env_key,
+            global_auth_path,
+        )?)),
     }
 }
 
@@ -109,12 +167,20 @@ fn resolve_auth_set_key(api_key: Option<String>, env_key: Option<&str>) -> Resul
         .ok_or_else(|| anyhow!("auth set needs an API key argument or NEUROGATE_API_KEY"))
 }
 
-pub(crate) fn doctor(root: &Path, env_key: Option<&str>) -> Result<String> {
+pub(crate) fn doctor(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
     let mut out = String::new();
     out.push_str(&config_check(root));
     out.push_str(&mouse_debug::doctor_report());
-    out.push_str(&auth::render_status(&auth::status(root, env_key)?));
-    match live::client(root, env_key)? {
+    out.push_str(&auth::render_status(&auth::status_at(
+        root,
+        env_key,
+        global_auth_path,
+    )?));
+    match live::client(root, env_key, global_auth_path)? {
         Some(client) => live::block_on(async move {
             client.list_models().await.context("check /v1/models")?;
             client.account_limits().await.context("check /v1/me")?;
@@ -180,7 +246,12 @@ fn render_workspace_tui(root: &Path) -> Result<String> {
     Ok(render_workspace(&workspace_state(root)))
 }
 
-pub(crate) fn skills(root: &Path, command: SkillsCommand, env_key: Option<&str>) -> Result<String> {
+pub(crate) fn skills(
+    root: &Path,
+    command: SkillsCommand,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
     match command {
         SkillsCommand::List => {
             let mut out = "skills:\n".to_string();
@@ -193,6 +264,8 @@ pub(crate) fn skills(root: &Path, command: SkillsCommand, env_key: Option<&str>)
             let skill = find_skill(&id).ok_or_else(|| anyhow!("unknown skill: {id}"))?;
             Ok(serde_json::to_string_pretty(&skill)?)
         }
-        SkillsCommand::Run { id, objective } => run_skill(root, &id, objective, env_key),
+        SkillsCommand::Run { id, objective } => {
+            run_skill(root, &id, objective, env_key, global_auth_path)
+        }
     }
 }

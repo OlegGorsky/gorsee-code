@@ -6,6 +6,7 @@ use gorsee_code_usage::UsageRecord;
 
 use crate::{
     agent_loop::{resume_agent, run_agent, AgentOutcome, AgentRunContext, PendingApproval},
+    artifact_events::record_artifact_outcomes,
     budget_events::{record_budget_status, sync_manifest_budget, write_token_ledger},
     client::ChatClient,
     events::EventSink,
@@ -15,9 +16,11 @@ use crate::{
     resume_types::{
         AgentResumeInput, FlowSuccess, PendingSaveInput, RemainingAgentsInput, ResumeState,
     },
-    runner::{finish_success, finish_unsuccessful, record_context_update},
-    session_artifacts::{write_run_artifacts, write_session_snapshots},
+    runner_execute::record_context_update,
+    runner_finish::{finish_success, finish_unsuccessful},
+    session_artifacts::{write_run_artifacts, write_session_snapshots, RunArtifactsInput},
     summary::{build_summary, TaskRunSummary},
+    turn_contract::turn_execution_context,
     AgentRunError,
 };
 
@@ -46,14 +49,20 @@ pub(crate) fn resume_after_decision<C: ChatClient>(
                 return Err(error);
             }
             write_token_ledger(&session_dir, &usage_records)?;
-            let mut artifacts = write_run_artifacts(
-                &session_dir,
-                &manifest,
-                &spec,
-                skill_id.as_deref(),
-                &answers,
-                &tool_results,
-            )?;
+            let turn_context = turn_execution_context(&spec, &agents);
+            let run_artifacts = write_run_artifacts(RunArtifactsInput {
+                session_dir: &session_dir,
+                manifest: &manifest,
+                spec: &spec,
+                skill_id: skill_id.as_deref(),
+                answers: &answers,
+                results: &tool_results,
+                usage_records: &usage_records,
+                plan: turn_context.plan.as_ref(),
+                contract: &turn_context.contract,
+            })?;
+            record_artifact_outcomes(&mut sink, &run_artifacts)?;
+            let mut artifacts = run_artifacts.records;
             finish_success(
                 store,
                 &mut sink,
@@ -90,6 +99,7 @@ fn resume_flow<C: ChatClient>(
     let skill_id = pending.skill_id.clone();
     let agents = pending.agents.clone();
     let agent_index = pending.agent_index;
+    let turn_context = turn_execution_context(&spec, &agents);
     let mut answers = pending.answers.clone();
     let mut tool_results = pending.global_tool_results.clone();
     let mut usage_records = pending.global_usage_records.clone();
@@ -104,6 +114,8 @@ fn resume_flow<C: ChatClient>(
             spec: &spec,
             skill_id: skill_id.as_deref(),
             agent,
+            turn_plan: turn_context.plan.as_ref(),
+            execution_contract: &turn_context.contract,
         },
         &mut answers,
         &mut tool_results,
@@ -125,7 +137,7 @@ fn resume_flow<C: ChatClient>(
                     tool_results: &tool_results,
                     usage_records: &usage_records,
                 },
-                waiting,
+                *waiting,
             )?;
             return Err(AgentRunError::WaitingApproval(approval_id));
         }
@@ -142,6 +154,8 @@ fn resume_flow<C: ChatClient>(
             sink,
             agents: &agents,
             first_index: agent_index + 1,
+            turn_plan: turn_context.plan.as_ref(),
+            execution_contract: &turn_context.contract,
         },
         &mut answers,
         &mut tool_results,
@@ -166,6 +180,8 @@ fn resume_current_agent<C: ChatClient>(
         spec,
         skill_id,
         agent,
+        turn_plan,
+        execution_contract,
     } = input;
 
     let outcome = resume_agent(
@@ -177,6 +193,8 @@ fn resume_current_agent<C: ChatClient>(
             registry,
             previous_answers: answers,
             previous_tool_results: tool_results,
+            turn_plan,
+            execution_contract,
         },
         sink,
         waiting,
@@ -201,6 +219,8 @@ fn run_remaining_agents<C: ChatClient>(
         sink,
         agents,
         first_index,
+        turn_plan,
+        execution_contract,
     } = input;
 
     for (agent_index, agent) in agents.iter().enumerate().skip(first_index) {
@@ -213,6 +233,8 @@ fn run_remaining_agents<C: ChatClient>(
                 registry,
                 previous_answers: answers,
                 previous_tool_results: tool_results,
+                turn_plan,
+                execution_contract,
             },
             sink,
         )?;
@@ -231,7 +253,7 @@ fn run_remaining_agents<C: ChatClient>(
                     tool_results,
                     usage_records,
                 },
-                waiting,
+                *waiting,
             )?;
             return Err(AgentRunError::WaitingApproval(approval_id));
         }
@@ -259,7 +281,7 @@ fn handle_outcome(
             record_context_update(sink, agent, answers.len(), tool_results.len())?;
             Ok(ResumeState::Finished)
         }
-        AgentOutcome::Waiting(waiting) => Ok(ResumeState::Waiting(waiting)),
+        AgentOutcome::Waiting(waiting) => Ok(ResumeState::Waiting(Box::new(waiting))),
     }
 }
 

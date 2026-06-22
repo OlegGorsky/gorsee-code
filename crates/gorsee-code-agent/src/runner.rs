@@ -1,20 +1,24 @@
 use std::path::Path;
 
-use gorsee_code_artifacts::ArtifactRecord;
-use gorsee_code_core::{default_agent_matrix, AgentProfile, EventKind, TaskSpec};
+use gorsee_code_coding_core::{LocalCodingProtocol, TurnRequest};
+use gorsee_code_core::{default_agent_matrix, AgentProfile, TaskSpec};
 use gorsee_code_safety::Redactor;
-use gorsee_code_session::{ApprovalDecision, SessionManifest, SessionStore};
+use gorsee_code_session::{ApprovalDecision, SessionStore};
 use gorsee_code_tools::builtin_registry;
-use serde_json::json;
 
 use crate::{
-    agent_loop::{run_agent, AgentOutcome, AgentRunContext},
-    budget_events::{record_budget_status, sync_manifest_budget, write_token_ledger},
+    artifact_events::record_artifact_outcomes,
+    budget_events::{
+        append_token_ledger, record_budget_status, sync_manifest_budget, write_token_ledger,
+    },
     client::ChatClient,
-    events::EventSink,
-    execution::{save_pending_execution, ExecutionOutput, PendingExecution},
-    session_artifacts::{write_run_artifacts, write_session_snapshots},
+    events::{EventObserver, EventSink},
+    execution::ExecutionOutput,
+    runner_execute::{execute, ExecuteInput},
+    runner_finish::{finish_success, finish_turn_success, finish_unsuccessful, manifest_for},
+    session_artifacts::{write_run_artifacts, write_session_snapshots, RunArtifactsInput},
     summary::{build_summary, session_id, TaskRunSummary},
+    turn_response::{build_lcp_response_from_store, waiting_summary, TaskTurnOutput},
     AgentRunError,
 };
 
@@ -45,6 +49,90 @@ impl TaskRunner {
         agents: Vec<AgentProfile>,
     ) -> Result<TaskRunSummary, AgentRunError> {
         self.run(spec, None, client, agents)
+    }
+
+    pub fn run_turn_with_agents<C: ChatClient>(
+        &self,
+        session_id: &str,
+        spec: &TaskSpec,
+        client: &C,
+        agents: Vec<AgentProfile>,
+    ) -> Result<TaskRunSummary, AgentRunError> {
+        self.run_existing_session(session_id, spec, None, client, agents, None)
+    }
+
+    pub fn run_turn_with_agents_observed<C: ChatClient>(
+        &self,
+        session_id: &str,
+        spec: &TaskSpec,
+        client: &C,
+        agents: Vec<AgentProfile>,
+        observer: Box<EventObserver>,
+    ) -> Result<TaskRunSummary, AgentRunError> {
+        self.run_existing_session(session_id, spec, None, client, agents, Some(observer))
+    }
+
+    pub fn run_lcp_turn<C: ChatClient>(
+        &self,
+        request: TurnRequest,
+        client: &C,
+        profiles: Vec<AgentProfile>,
+    ) -> Result<TaskTurnOutput, AgentRunError> {
+        self.run_lcp_turn_inner(request, client, profiles, None)
+    }
+
+    pub fn run_lcp_turn_observed<C: ChatClient>(
+        &self,
+        request: TurnRequest,
+        client: &C,
+        profiles: Vec<AgentProfile>,
+        observer: Box<EventObserver>,
+    ) -> Result<TaskTurnOutput, AgentRunError> {
+        self.run_lcp_turn_inner(request, client, profiles, Some(observer))
+    }
+
+    fn run_lcp_turn_inner<C: ChatClient>(
+        &self,
+        request: TurnRequest,
+        client: &C,
+        profiles: Vec<AgentProfile>,
+        observer: Option<Box<EventObserver>>,
+    ) -> Result<TaskTurnOutput, AgentRunError> {
+        let orchestration = LocalCodingProtocol::default()
+            .plan_turn(request, profiles)
+            .orchestration;
+        let spec = TaskSpec::new(
+            orchestration.request.message.clone(),
+            orchestration.request.workspace.root.clone(),
+        );
+        let agents = orchestration.agents.clone();
+        let session_id = orchestration
+            .request
+            .workspace
+            .session_id
+            .clone()
+            .unwrap_or_else(|| session_id(&spec.title));
+        let summary = match orchestration.request.workspace.session_id.as_deref() {
+            Some(_) => self.run_existing_session(
+                &session_id,
+                &spec,
+                None,
+                client,
+                agents.clone(),
+                observer,
+            ),
+            None => {
+                self.run_new_session(&session_id, &spec, None, client, agents.clone(), observer)
+            }
+        };
+        match summary {
+            Ok(summary) => self.turn_output(orchestration, summary),
+            Err(AgentRunError::WaitingApproval(_)) => {
+                let summary = waiting_summary(&self.store, session_id, agents)?;
+                self.turn_output(orchestration, summary)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub fn run_skill<C: ChatClient>(
@@ -83,26 +171,46 @@ impl TaskRunner {
         client: &C,
         agents: Vec<AgentProfile>,
     ) -> Result<TaskRunSummary, AgentRunError> {
-        let registry = builtin_registry(&spec.repo_path)?;
         let session_id = session_id(&spec.title);
-        let mut manifest = manifest_for(&session_id, spec, &agents);
+        self.run_new_session(&session_id, spec, skill_id, client, agents, None)
+    }
+
+    fn run_new_session<C: ChatClient>(
+        &self,
+        session_id: &str,
+        spec: &TaskSpec,
+        skill_id: Option<&str>,
+        client: &C,
+        agents: Vec<AgentProfile>,
+        observer: Option<Box<EventObserver>>,
+    ) -> Result<TaskRunSummary, AgentRunError> {
+        let registry = builtin_registry(&spec.repo_path)?;
+        let mut manifest = manifest_for(session_id, spec, &agents);
         let session_dir = self.store.create(&manifest)?;
-        let mut sink = EventSink::new(&self.store, session_id.clone());
-        let result = self.execute(ExecuteInput {
-            session_id: &session_id,
-            spec,
-            skill_id,
-            client,
-            agents: &agents,
-            registry: &registry,
-            sink: &mut sink,
-        });
+        let mut sink = EventSink::new(&self.store, session_id.to_string());
+        if let Some(observer) = observer {
+            sink = sink.with_observer(observer);
+        }
+        let result = execute(
+            &self.store,
+            ExecuteInput {
+                session_id,
+                spec,
+                skill_id,
+                client,
+                agents: &agents,
+                registry: &registry,
+                sink: &mut sink,
+            },
+        );
         match result {
             Ok(output) => {
                 let ExecutionOutput {
                     answers,
                     tool_results,
                     usage_records,
+                    turn_plan,
+                    execution_contract,
                 } = output;
                 sync_manifest_budget(&mut manifest, &usage_records);
                 if let Err(error) = record_budget_status(&mut sink, &manifest, &usage_records) {
@@ -110,17 +218,27 @@ impl TaskRunner {
                     return Err(error);
                 }
                 write_token_ledger(&session_dir, &usage_records)?;
-                let mut artifacts = write_run_artifacts(
-                    &session_dir,
-                    &manifest,
+                let run_artifacts = write_run_artifacts(RunArtifactsInput {
+                    session_dir: &session_dir,
+                    manifest: &manifest,
                     spec,
                     skill_id,
-                    &answers,
-                    &tool_results,
-                )?;
+                    answers: &answers,
+                    results: &tool_results,
+                    usage_records: &usage_records,
+                    plan: turn_plan.as_ref(),
+                    contract: &execution_contract,
+                })?;
+                record_artifact_outcomes(&mut sink, &run_artifacts)?;
+                let mut artifacts = run_artifacts.records;
                 finish_success(&self.store, &mut sink, &mut manifest, skill_id, &artifacts)?;
                 artifacts.extend(write_session_snapshots(&session_dir)?);
-                Ok(build_summary(session_id, sink.count(), agents, artifacts))
+                Ok(build_summary(
+                    session_id.to_string(),
+                    sink.count(),
+                    agents,
+                    artifacts,
+                ))
             }
             Err(error) => {
                 finish_unsuccessful(&self.store, &mut sink, &mut manifest, &error)?;
@@ -129,186 +247,94 @@ impl TaskRunner {
         }
     }
 
-    fn execute<C: ChatClient>(
+    fn run_existing_session<C: ChatClient>(
         &self,
-        input: ExecuteInput<'_, '_, C>,
-    ) -> Result<ExecutionOutput, AgentRunError> {
-        let ExecuteInput {
-            session_id,
-            spec,
-            skill_id,
-            client,
-            agents,
-            registry,
-            sink,
-        } = input;
-
-        start_events(sink, spec, skill_id)?;
-        let mut answers = Vec::new();
-        let mut tool_results = Vec::new();
-        let mut usage_records = Vec::new();
-        for (agent_index, agent) in agents.iter().enumerate() {
-            let outcome = run_agent(
-                AgentRunContext {
+        session_id: &str,
+        spec: &TaskSpec,
+        skill_id: Option<&str>,
+        client: &C,
+        agents: Vec<AgentProfile>,
+        observer: Option<Box<EventObserver>>,
+    ) -> Result<TaskRunSummary, AgentRunError> {
+        let registry = builtin_registry(&spec.repo_path)?;
+        let mut manifest = self.store.read_manifest(session_id)?;
+        manifest.status = "running".into();
+        manifest.repo = spec.repo_path.clone();
+        manifest.agents = agents.iter().map(|agent| agent.id().to_string()).collect();
+        manifest.budget.tokens_limit = spec.budget_tokens;
+        self.store.write_manifest(&manifest)?;
+        let session_dir = self.store.session_dir(session_id);
+        let mut sink = EventSink::resume(&self.store, session_id.to_string())?;
+        if let Some(observer) = observer {
+            sink = sink.with_observer(observer);
+        }
+        let result = execute(
+            &self.store,
+            ExecuteInput {
+                session_id,
+                spec,
+                skill_id,
+                client,
+                agents: &agents,
+                registry: &registry,
+                sink: &mut sink,
+            },
+        );
+        match result {
+            Ok(output) => {
+                let ExecutionOutput {
+                    answers,
+                    tool_results,
+                    usage_records,
+                    turn_plan,
+                    execution_contract,
+                } = output;
+                let usage_records = append_token_ledger(&session_dir, &usage_records)?;
+                sync_manifest_budget(&mut manifest, &usage_records);
+                if let Err(error) = record_budget_status(&mut sink, &manifest, &usage_records) {
+                    finish_unsuccessful(&self.store, &mut sink, &mut manifest, &error)?;
+                    return Err(error);
+                }
+                let run_artifacts = write_run_artifacts(RunArtifactsInput {
+                    session_dir: &session_dir,
+                    manifest: &manifest,
                     spec,
                     skill_id,
-                    client,
-                    agent,
-                    registry,
-                    previous_answers: &answers,
-                    previous_tool_results: &tool_results,
-                },
-                sink,
-            )?;
-            match outcome {
-                AgentOutcome::Finished {
-                    answer,
-                    tool_results: agent_tool_results,
-                    usage_records: agent_usage_records,
-                } => {
-                    tool_results.extend(agent_tool_results);
-                    usage_records.extend(agent_usage_records);
-                    answers.push(answer);
-                    record_context_update(sink, agent, answers.len(), tool_results.len())?;
-                }
-                AgentOutcome::Waiting(pending) => {
-                    let approval_id = pending.approval_id.clone();
-                    let snapshot =
-                        PendingExecution::from_parts(crate::execution::PendingExecutionParts {
-                            session_id: session_id.to_string(),
-                            spec,
-                            skill_id,
-                            agents,
-                            agent_index,
-                            answers: &answers,
-                            global_tool_results: &tool_results,
-                            global_usage_records: &usage_records,
-                            pending,
-                        });
-                    save_pending_execution(&self.store, &snapshot)?;
-                    return Err(AgentRunError::WaitingApproval(approval_id));
-                }
+                    answers: &answers,
+                    results: &tool_results,
+                    usage_records: &usage_records,
+                    plan: turn_plan.as_ref(),
+                    contract: &execution_contract,
+                })?;
+                record_artifact_outcomes(&mut sink, &run_artifacts)?;
+                let mut artifacts = run_artifacts.records;
+                finish_turn_success(&self.store, &mut sink, &mut manifest, skill_id, &artifacts)?;
+                artifacts.extend(write_session_snapshots(&session_dir)?);
+                Ok(build_summary(
+                    session_id.to_string(),
+                    sink.count(),
+                    agents,
+                    artifacts,
+                ))
+            }
+            Err(error) => {
+                finish_unsuccessful(&self.store, &mut sink, &mut manifest, &error)?;
+                Err(error)
             }
         }
-        Ok(ExecutionOutput {
-            answers,
-            tool_results,
-            usage_records,
+    }
+
+    fn turn_output(
+        &self,
+        orchestration: gorsee_code_coding_core::OrchestrationPlan,
+        summary: TaskRunSummary,
+    ) -> Result<TaskTurnOutput, AgentRunError> {
+        let response =
+            build_lcp_response_from_store(&self.store, orchestration.clone(), &summary.session_id)?;
+        Ok(TaskTurnOutput {
+            orchestration,
+            response,
+            summary,
         })
     }
-}
-
-struct ExecuteInput<'a, 'sink, C: ChatClient> {
-    session_id: &'a str,
-    spec: &'a TaskSpec,
-    skill_id: Option<&'a str>,
-    client: &'a C,
-    agents: &'a [AgentProfile],
-    registry: &'a gorsee_code_tool_runtime::ToolRegistry,
-    sink: &'a mut EventSink<'sink>,
-}
-
-fn start_events(
-    sink: &mut EventSink<'_>,
-    spec: &TaskSpec,
-    skill_id: Option<&str>,
-) -> Result<(), AgentRunError> {
-    sink.push(
-        None,
-        EventKind::SessionStarted,
-        json!({ "objective": spec.objective }),
-    )?;
-    if let Some(skill_id) = skill_id {
-        sink.push(None, EventKind::SkillStarted, json!({ "skill": skill_id }))?;
-    }
-    Ok(())
-}
-
-pub(crate) fn record_context_update(
-    sink: &mut EventSink<'_>,
-    agent: &AgentProfile,
-    answers: usize,
-    tool_results: usize,
-) -> Result<(), AgentRunError> {
-    sink.push(
-        Some(agent.id()),
-        EventKind::ContextUpdated,
-        json!({ "answers": answers, "tool_results": tool_results }),
-    )?;
-    Ok(())
-}
-
-pub(crate) fn finish_success(
-    store: &SessionStore,
-    sink: &mut EventSink<'_>,
-    manifest: &mut SessionManifest,
-    skill_id: Option<&str>,
-    artifacts: &[ArtifactRecord],
-) -> Result<(), AgentRunError> {
-    for artifact in artifacts {
-        sink.push(
-            None,
-            EventKind::ArtifactCreated,
-            json!({ "artifact": artifact }),
-        )?;
-    }
-    if let Some(skill_id) = skill_id {
-        sink.push(
-            None,
-            EventKind::SkillFinished,
-            json!({ "skill": skill_id, "status": "finished" }),
-        )?;
-    }
-    sink.push(
-        None,
-        EventKind::SessionFinished,
-        json!({ "status": "finished" }),
-    )?;
-    manifest.status = "finished".into();
-    store.write_manifest(manifest)?;
-    Ok(())
-}
-
-fn finish_failure(
-    store: &SessionStore,
-    sink: &mut EventSink<'_>,
-    manifest: &mut SessionManifest,
-    error: &AgentRunError,
-) -> Result<(), AgentRunError> {
-    sink.push(
-        None,
-        EventKind::Error,
-        json!({ "error": error.to_string() }),
-    )?;
-    manifest.status = "failed".into();
-    store.write_manifest(manifest)?;
-    Ok(())
-}
-
-pub(crate) fn finish_unsuccessful(
-    store: &SessionStore,
-    sink: &mut EventSink<'_>,
-    manifest: &mut SessionManifest,
-    error: &AgentRunError,
-) -> Result<(), AgentRunError> {
-    match error {
-        AgentRunError::WaitingApproval(_) => finish_waiting_approval(store, manifest),
-        _ => finish_failure(store, sink, manifest, error),
-    }
-}
-
-fn finish_waiting_approval(
-    store: &SessionStore,
-    manifest: &mut SessionManifest,
-) -> Result<(), AgentRunError> {
-    manifest.status = "waiting_approval".into();
-    store.write_manifest(manifest)?;
-    Ok(())
-}
-
-fn manifest_for(session_id: &str, spec: &TaskSpec, agents: &[AgentProfile]) -> SessionManifest {
-    let mut manifest = SessionManifest::new(session_id, &spec.repo_path, "unknown");
-    manifest.agents = agents.iter().map(|agent| agent.id().to_string()).collect();
-    manifest.budget.tokens_limit = spec.budget_tokens;
-    manifest
 }

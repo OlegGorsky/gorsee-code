@@ -4,6 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use gorsee_code_coding_core::{ExecutionContract, TurnPlan};
 use gorsee_code_core::{AgentProfile, TaskSpec};
 use gorsee_code_session::{SessionStore, SessionStoreError};
 use gorsee_code_usage::UsageRecord;
@@ -40,6 +41,8 @@ pub(crate) struct ExecutionOutput {
     pub(crate) answers: Vec<AgentAnswer>,
     pub(crate) tool_results: Vec<ToolResult>,
     pub(crate) usage_records: Vec<UsageRecord>,
+    pub(crate) turn_plan: Option<TurnPlan>,
+    pub(crate) execution_contract: ExecutionContract,
 }
 
 impl PendingExecution {

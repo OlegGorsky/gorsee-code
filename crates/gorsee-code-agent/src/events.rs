@@ -3,11 +3,16 @@ use gorsee_code_safety::RiskClass;
 use gorsee_code_session::{ApprovalRecord, SessionStore, SessionStoreError};
 use serde_json::Value;
 
+use crate::AgentRunError;
+
+pub type EventObserver = dyn FnMut(&Event) -> Result<(), AgentRunError> + Send;
+
 pub(crate) struct EventSink<'a> {
     store: &'a SessionStore,
     session_id: String,
     next_sequence: u64,
     count: usize,
+    observer: Option<Box<EventObserver>>,
 }
 
 impl<'a> EventSink<'a> {
@@ -17,6 +22,7 @@ impl<'a> EventSink<'a> {
             session_id,
             next_sequence: 1,
             count: 0,
+            observer: None,
         }
     }
 
@@ -31,7 +37,13 @@ impl<'a> EventSink<'a> {
             session_id,
             next_sequence,
             count: events.len(),
+            observer: None,
         })
+    }
+
+    pub(crate) fn with_observer(mut self, observer: Box<EventObserver>) -> Self {
+        self.observer = Some(observer);
+        self
     }
 
     pub(crate) fn count(&self) -> usize {
@@ -43,7 +55,7 @@ impl<'a> EventSink<'a> {
         agent_id: Option<&str>,
         kind: EventKind,
         payload: Value,
-    ) -> Result<(), SessionStoreError> {
+    ) -> Result<(), AgentRunError> {
         let event = Event::new(
             self.next_sequence,
             &self.session_id,
@@ -51,9 +63,13 @@ impl<'a> EventSink<'a> {
             kind,
             payload,
         );
+        self.store.append_event(&event)?;
+        if let Some(observer) = self.observer.as_mut() {
+            observer(&event)?;
+        }
         self.next_sequence += 1;
         self.count += 1;
-        self.store.append_event(&event)
+        Ok(())
     }
 
     pub(crate) fn create_approval(

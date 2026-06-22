@@ -1,0 +1,23 @@
+[package]
+name = "gorsee-code-acp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+agent-client-protocol.workspace = true
+gorsee-code-agent = { path = "../gorsee-code-agent" }
+gorsee-code-coding-core = { path = "../gorsee-code-coding-core" }
+gorsee-code-core = { path = "../gorsee-code-core" }
+gorsee-code-safety = { path = "../gorsee-code-safety" }
+gorsee-code-session = { path = "../gorsee-code-session" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+gorsee-code-neurogate = { path = "../gorsee-code-neurogate" }
+tempfile.workspace = true

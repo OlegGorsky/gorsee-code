@@ -34,6 +34,7 @@ pub(crate) fn budget_view(manifest: &SessionManifest) -> BudgetView {
     let percent_used = usage_percent(manifest);
     BudgetView {
         used_tokens: manifest.budget.tokens_used,
+        cached_tokens: 0,
         limit_tokens: manifest.budget.tokens_limit,
         percent_used,
         warning: percent_used >= 75.0,

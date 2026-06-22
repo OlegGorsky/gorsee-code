@@ -16,18 +16,23 @@ pub struct UsageRecord {
 }
 
 impl UsageRecord {
+    pub fn used_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.reasoning_tokens
+    }
+
     pub fn total_tokens(&self) -> u64 {
-        self.input_tokens + self.output_tokens + self.cached_tokens + self.reasoning_tokens
+        self.used_tokens() + self.cached_tokens
     }
 
     pub fn weighted_credits(&self) -> f64 {
-        self.total_tokens() as f64 * self.credit_multiplier
+        self.used_tokens() as f64 * self.credit_multiplier
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TokenTotals {
     pub tokens: u64,
+    pub cached_tokens: u64,
     pub weighted_credits: f64,
 }
 
@@ -45,7 +50,8 @@ impl TokenLedger {
         self.records
             .iter()
             .fold(TokenTotals::default(), |mut totals, record| {
-                totals.tokens += record.total_tokens();
+                totals.tokens += record.used_tokens();
+                totals.cached_tokens += record.cached_tokens;
                 totals.weighted_credits += record.weighted_credits();
                 totals
             })
@@ -57,7 +63,8 @@ impl TokenLedger {
             let entry = map
                 .entry(record.agent_id.clone())
                 .or_insert_with(TokenTotals::default);
-            entry.tokens += record.total_tokens();
+            entry.tokens += record.used_tokens();
+            entry.cached_tokens += record.cached_tokens;
             entry.weighted_credits += record.weighted_credits();
         }
         map
@@ -84,7 +91,8 @@ mod tests {
         });
 
         let totals = ledger.totals();
-        assert_eq!(totals.tokens, 20);
-        assert_eq!(totals.weighted_credits, 30.0);
+        assert_eq!(totals.tokens, 18);
+        assert_eq!(totals.cached_tokens, 2);
+        assert_eq!(totals.weighted_credits, 27.0);
     }
 }

@@ -123,11 +123,21 @@ fn api_key(root: &Path) -> Result<Option<String>, ApprovalActionError> {
             return Ok(Some(value));
         }
     }
-    read_local_key(root)
+    read_local_key(root)?.map_or_else(read_global_key, |key| Ok(Some(key)))
 }
 
 fn read_local_key(root: &Path) -> Result<Option<String>, ApprovalActionError> {
-    let path = root.join(".gorsee-code").join("auth.json");
+    read_key_file(root.join(".gorsee-code").join("auth.json"))
+}
+
+fn read_global_key() -> Result<Option<String>, ApprovalActionError> {
+    match global_auth_path() {
+        Some(path) => read_key_file(path),
+        None => Ok(None),
+    }
+}
+
+fn read_key_file(path: impl AsRef<Path>) -> Result<Option<String>, ApprovalActionError> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -175,6 +185,22 @@ fn non_empty(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn global_auth_path() -> Option<std::path::PathBuf> {
+    if let Some(home) = non_empty_os_var("GORSEE_CODE_AUTH_HOME") {
+        return Some(home.join("auth.json"));
+    }
+    if let Some(config_home) = non_empty_os_var("XDG_CONFIG_HOME") {
+        return Some(config_home.join("gorsee-code").join("auth.json"));
+    }
+    non_empty_os_var("HOME").map(|home| home.join(".config").join("gorsee-code").join("auth.json"))
+}
+
+fn non_empty_os_var(name: &str) -> Option<std::path::PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
 }
 
 fn missing_auth() -> ApprovalActionError {

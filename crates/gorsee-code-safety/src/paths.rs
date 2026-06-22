@@ -32,7 +32,7 @@ impl PathPolicy {
     }
 
     pub fn resolve_for_write(&self, path: impl AsRef<Path>) -> Result<PathBuf, PathPolicyError> {
-        let relative = normalize_relative(path.as_ref())?;
+        let relative = normalize_write_path(path.as_ref(), &self.root)?;
         let absolute = self.root.join(relative);
         let ancestor = nearest_existing_ancestor(absolute.parent().unwrap_or(&self.root))?;
         self.ensure_inside(ancestor)?;
@@ -77,6 +77,16 @@ fn normalize_relative(path: &Path) -> Result<PathBuf, PathPolicyError> {
     Ok(normalized)
 }
 
+fn normalize_write_path(path: &Path, root: &Path) -> Result<PathBuf, PathPolicyError> {
+    if path.is_absolute() {
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|_| PathPolicyError::EscapesWorkspace(path.display().to_string()))?;
+        return normalize_relative(relative);
+    }
+    normalize_relative(path)
+}
+
 fn nearest_existing_ancestor(path: &Path) -> Result<PathBuf, PathPolicyError> {
     let mut ancestor = path;
     loop {
@@ -114,5 +124,27 @@ mod tests {
         let target = policy.resolve_for_write("src/generated/lib.rs").unwrap();
 
         assert_eq!(target, temp.path().join("src/generated/lib.rs"));
+    }
+
+    #[test]
+    fn write_paths_accept_absolute_path_inside_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let policy = PathPolicy::new(temp.path()).unwrap();
+        let absolute = temp.path().join("src/generated/lib.rs");
+
+        let target = policy.resolve_for_write(&absolute).unwrap();
+
+        assert_eq!(target, temp.path().join("src/generated/lib.rs"));
+    }
+
+    #[test]
+    fn write_paths_reject_absolute_path_outside_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let policy = PathPolicy::new(temp.path()).unwrap();
+        let outside = temp.path().parent().unwrap().join("outside.txt");
+
+        let error = policy.resolve_for_write(&outside).unwrap_err();
+
+        assert!(matches!(error, PathPolicyError::EscapesWorkspace(_)));
     }
 }

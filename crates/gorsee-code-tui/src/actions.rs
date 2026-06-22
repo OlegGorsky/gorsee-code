@@ -2,11 +2,12 @@ use std::{path::Path, sync::Arc};
 
 use anyhow::Result;
 
+type SubmitHandler = Arc<dyn Fn(&Path, Option<&str>, String) -> Result<String> + Send + Sync>;
 type Handler = Arc<dyn Fn(&Path, String) -> Result<String> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct TuiHandlers {
-    pub(crate) submit: Handler,
+    pub(crate) submit: SubmitHandler,
     pub(crate) approve: Handler,
     pub(crate) deny: Handler,
     pub(crate) pause: Handler,
@@ -24,7 +25,7 @@ impl TuiHandlers {
         command: C,
     ) -> Self
     where
-        S: Fn(&Path, String) -> Result<String> + Send + Sync + 'static,
+        S: Fn(&Path, Option<&str>, String) -> Result<String> + Send + Sync + 'static,
         A: Fn(&Path, String) -> Result<String> + Send + Sync + 'static,
         D: Fn(&Path, String) -> Result<String> + Send + Sync + 'static,
         P: Fn(&Path, String) -> Result<String> + Send + Sync + 'static,

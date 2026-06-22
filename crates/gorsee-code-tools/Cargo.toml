@@ -9,6 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 gorsee-code-context = { path = "../gorsee-code-context" }
+gorsee-code-diff = { path = "../gorsee-code-diff" }
+gorsee-code-mcp = { path = "../gorsee-code-mcp" }
 gorsee-code-safety = { path = "../gorsee-code-safety" }
 gorsee-code-tool-runtime = { path = "../gorsee-code-tool-runtime" }
 ignore.workspace = true

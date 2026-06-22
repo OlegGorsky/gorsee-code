@@ -26,6 +26,17 @@ fn default_workspace_state_does_not_auto_open_latest_session() {
 }
 
 #[test]
+fn default_workspace_state_opens_latest_ready_session() {
+    let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "ready-chat", "2026-06-20T01:00:00Z", "ready");
+
+    let state = workspace_state(temp.path());
+
+    assert_eq!(state.session.id, "ready-chat");
+    assert_eq!(state.session.status, "ready");
+}
+
+#[test]
 fn workspace_state_can_load_requested_session() {
     let temp = tempfile::tempdir().unwrap();
     write_session(temp.path(), "older", "2026-06-20T00:00:00Z", "finished");
@@ -117,7 +128,8 @@ fn workspace_state_uses_token_ledger_by_agent() {
 
     let state = workspace_state_for_session(temp.path(), Some("ledger"));
 
-    assert_eq!(state.budget.used_tokens, 60);
+    assert_eq!(state.budget.used_tokens, 55);
+    assert_eq!(state.budget.cached_tokens, 5);
     let architect = state
         .agents
         .iter()
@@ -128,8 +140,10 @@ fn workspace_state_uses_token_ledger_by_agent() {
         .iter()
         .find(|agent| agent.id == "coder")
         .unwrap();
-    assert_eq!(architect.tokens_used, 50);
+    assert_eq!(architect.tokens_used, 45);
+    assert_eq!(architect.cached_tokens, 5);
     assert_eq!(coder.tokens_used, 10);
+    assert_eq!(coder.cached_tokens, 0);
 }
 
 #[test]
@@ -192,6 +206,79 @@ fn timeline_hides_internal_events_and_labels_user_prompt() {
     assert_eq!(state.timeline[0].summary, "Привет");
     assert_eq!(state.timeline[1].kind, "assistant");
     assert_eq!(state.timeline[1].summary, "Привет! Чем помочь?");
+}
+
+#[test]
+fn timeline_surfaces_structured_diff_and_verification_events() {
+    let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "chat", "2026-06-20T01:00:00Z", "ready");
+    let session = temp.path().join(".gorsee-code/sessions/chat");
+    fs::write(
+        session.join("events.jsonl"),
+        [
+            event_json(
+                1,
+                "turn_started",
+                None,
+                r#"{"objective":"измени файл"}"#,
+            ),
+            event_json(
+                2,
+                "diff_ready",
+                None,
+                r#"{"summary":"diff готов: 1 файлов, +2 -0","artifact":"diff.json"}"#,
+            ),
+            event_json(
+                3,
+                "test_finished",
+                None,
+                r#"{"summary":"проверки пройдены: cargo test --workspace --quiet","artifact":"verification.json"}"#,
+            ),
+            event_json(
+                4,
+                "agent_message",
+                Some("validator"),
+                r#"{"message":"Готово: файл изменен, проверки прошли."}"#,
+            ),
+            event_json(5, "turn_finished", None, r#"{"status":"ready"}"#),
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+
+    let state = workspace_state_for_session(temp.path(), Some("chat"));
+
+    assert_eq!(
+        state
+            .timeline
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["user", "patch", "verification", "assistant"]
+    );
+    assert_eq!(state.timeline[1].summary, "diff готов: 1 файлов, +2 -0");
+    assert!(state.timeline[2].summary.contains("проверки пройдены"));
+}
+
+#[test]
+fn timeline_does_not_show_workspace_ready_bootstrap() {
+    let temp = tempfile::tempdir().unwrap();
+    write_session(temp.path(), "chat", "2026-06-20T01:00:00Z", "running");
+    let session = temp.path().join(".gorsee-code/sessions/chat");
+    fs::write(
+        session.join("events.jsonl"),
+        event_json(
+            1,
+            "session_started",
+            None,
+            r#"{"objective":"workspace_ready"}"#,
+        ),
+    )
+    .unwrap();
+
+    let state = workspace_state_for_session(temp.path(), Some("chat"));
+
+    assert!(state.timeline.is_empty());
 }
 
 fn write_session(root: &Path, id: &str, started_at: &str, status: &str) {

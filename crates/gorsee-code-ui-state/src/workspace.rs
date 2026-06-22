@@ -6,11 +6,12 @@ use std::{
     process::Command,
 };
 
-use gorsee_code_core::{Event, EventKind};
+use gorsee_code_coding_core::{TranscriptEvent, TranscriptEventKind, TranscriptMapper};
+use gorsee_code_core::Event;
 use gorsee_code_session::{ApprovalRecord, ApprovalStatus, SessionManifest};
 
 use crate::{
-    workspace_agents::{agent_views, budget_view, config_for, read_ledger},
+    workspace_agents::{agent_views, budget_view, budget_view_with_cache, config_for, read_ledger},
     EventView, SessionView, ToolCallView, WorkspaceState,
 };
 
@@ -65,6 +66,10 @@ fn session_state(
         .map(|ledger| ledger.totals().tokens)
         .filter(|tokens| *tokens > 0)
         .unwrap_or(manifest.budget.tokens_used);
+    let cached_tokens = ledger
+        .as_ref()
+        .map(|ledger| ledger.totals().cached_tokens)
+        .unwrap_or_default();
     WorkspaceState {
         session: SessionView {
             id: manifest.id.clone(),
@@ -81,7 +86,7 @@ fn session_state(
             Some(&manifest.agents),
         ),
         timeline: event_views(events),
-        budget: budget_view(used_tokens, manifest.budget.tokens_limit),
+        budget: budget_view_with_cache(used_tokens, cached_tokens, manifest.budget.tokens_limit),
         approvals: approval_views(approvals),
         gateway_status: "local".into(),
     }
@@ -127,7 +132,7 @@ fn compare_sessions(left: &SessionManifest, right: &SessionManifest) -> Ordering
 }
 
 fn is_active_session(status: &str) -> bool {
-    matches!(status, "running" | "waiting_approval" | "paused")
+    matches!(status, "ready" | "running" | "waiting_approval" | "paused")
 }
 
 fn read_manifest(session_dir: &Path) -> Option<SessionManifest> {
@@ -160,23 +165,33 @@ fn read_approvals(session_dir: &Path) -> Vec<ApprovalRecord> {
 }
 
 fn event_views(events: Vec<Event>) -> Vec<EventView> {
-    events
+    TranscriptMapper
+        .map_events(&events)
         .iter()
-        .filter(|event| visible_event(&event.kind))
-        .map(EventView::from_event)
+        .map(transcript_view)
         .map(sanitize_event)
         .collect()
 }
 
-fn visible_event(kind: &EventKind) -> bool {
-    matches!(
-        kind,
-        EventKind::SessionStarted
-            | EventKind::AgentMessage
-            | EventKind::BudgetWarning
-            | EventKind::BudgetExceeded
-            | EventKind::Error
-    )
+fn transcript_view(event: &TranscriptEvent) -> EventView {
+    EventView {
+        sequence: event.sequence,
+        kind: transcript_kind(&event.kind).into(),
+        agent_id: event.agent_id.clone(),
+        summary: event.summary.clone(),
+    }
+}
+
+fn transcript_kind(kind: &TranscriptEventKind) -> &'static str {
+    match kind {
+        TranscriptEventKind::UserMessage => "user",
+        TranscriptEventKind::AssistantMessage | TranscriptEventKind::Thinking => "assistant",
+        TranscriptEventKind::ToolSummary => "tool",
+        TranscriptEventKind::DiffReady => "patch",
+        TranscriptEventKind::ApprovalNeeded => "tool",
+        TranscriptEventKind::VerificationResult => "verification",
+        TranscriptEventKind::ErrorSummary => "error",
+    }
 }
 
 fn approval_views(approvals: Vec<ApprovalRecord>) -> Vec<ToolCallView> {

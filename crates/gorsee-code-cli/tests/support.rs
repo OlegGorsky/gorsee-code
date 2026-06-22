@@ -25,6 +25,7 @@ impl PtySession {
         command.cwd(cwd);
         command.env_remove("NEUROGATE_API_KEY");
         command.env_remove("GORSEE_NEUROGATE_API_KEY");
+        command.env("GORSEE_CODE_AUTH_HOME", cwd.join("global-auth"));
 
         let child = pair.slave.spawn_command(command).unwrap();
         let reader = pair.master.try_clone_reader().unwrap();

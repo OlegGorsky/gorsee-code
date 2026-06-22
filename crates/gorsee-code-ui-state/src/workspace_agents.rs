@@ -27,12 +27,13 @@ pub(super) fn agent_views(
         .enumerate()
         .filter_map(|(index, id)| {
             let profile = config.agents.get(id)?;
-            let tokens = by_agent.get(id).map(|totals| totals.tokens).unwrap_or(0);
+            let totals = by_agent.get(id).cloned().unwrap_or_default();
             Some(AgentView::from_parts(
                 id,
                 &profile.model,
                 agent_status(status, index),
-                tokens,
+                totals.tokens,
+                totals.cached_tokens,
                 profile.budget_tokens,
             ))
         })
@@ -52,6 +53,14 @@ fn session_agent_ids(
 }
 
 pub(super) fn budget_view(used_tokens: u64, limit_tokens: u64) -> BudgetView {
+    budget_view_with_cache(used_tokens, 0, limit_tokens)
+}
+
+pub(super) fn budget_view_with_cache(
+    used_tokens: u64,
+    cached_tokens: u64,
+    limit_tokens: u64,
+) -> BudgetView {
     let percent_used = if limit_tokens == 0 {
         100.0
     } else {
@@ -59,6 +68,7 @@ pub(super) fn budget_view(used_tokens: u64, limit_tokens: u64) -> BudgetView {
     };
     BudgetView {
         used_tokens,
+        cached_tokens,
         limit_tokens,
         percent_used,
         warning: percent_used >= 75.0,

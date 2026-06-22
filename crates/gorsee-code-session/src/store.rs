@@ -67,6 +67,7 @@ impl SessionStore {
             &dir.join("manifest.json"),
             serde_json::to_string_pretty(manifest)?,
         )?;
+        self.write_session_note(manifest)?;
         Ok(())
     }
 
@@ -254,6 +255,20 @@ mod tests {
         let events = store.read_events("s1").unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].sequence, 1);
+    }
+
+    #[test]
+    fn write_manifest_refreshes_session_note_status() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(temp.path(), Redactor::default());
+        let mut manifest = SessionManifest::new("s1", "/repo", "main");
+        store.create(&manifest).unwrap();
+
+        manifest.status = "ready".into();
+        store.write_manifest(&manifest).unwrap();
+
+        let note = fs::read_to_string(store.session_dir("s1").join("session.md")).unwrap();
+        assert!(note.contains("Status: ready"));
     }
 
     #[test]

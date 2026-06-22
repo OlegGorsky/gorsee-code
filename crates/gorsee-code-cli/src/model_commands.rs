@@ -10,17 +10,22 @@ use crate::{
     live, paths,
 };
 
-pub fn run(root: &Path, env_key: Option<&str>, args: ModelsArgs) -> Result<String> {
+pub fn run(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+    args: ModelsArgs,
+) -> Result<String> {
     match args.command {
-        None => list(root, env_key),
-        Some(ModelsCommand::Benchmark) => benchmark(root, env_key),
+        None => list(root, env_key, global_auth_path),
+        Some(ModelsCommand::Benchmark) => benchmark(root, env_key, global_auth_path),
         Some(ModelsCommand::Recommend(args)) => recommend(root, args),
         Some(ModelsCommand::Set(args)) => set(root, args),
     }
 }
 
-fn list(root: &Path, env_key: Option<&str>) -> Result<String> {
-    if let Some(client) = live::client(root, env_key)? {
+fn list(root: &Path, env_key: Option<&str>, global_auth_path: Option<&Path>) -> Result<String> {
+    if let Some(client) = live::client(root, env_key, global_auth_path)? {
         return live::block_on(async move {
             let models = client.list_models().await?;
             Ok(render_live_models("models: live\n", &models))
@@ -32,8 +37,12 @@ fn list(root: &Path, env_key: Option<&str>) -> Result<String> {
     ))
 }
 
-fn benchmark(root: &Path, env_key: Option<&str>) -> Result<String> {
-    if let Some(client) = live::client(root, env_key)? {
+fn benchmark(
+    root: &Path,
+    env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
+) -> Result<String> {
+    if let Some(client) = live::client(root, env_key, global_auth_path)? {
         return live::block_on(async move {
             let models = client.list_models().await?;
             Ok(render_live_models("models benchmark: live\n", &models))

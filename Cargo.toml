@@ -1,15 +1,19 @@
 [workspace]
 members = [
   "crates/gorsee-code-agent",
+  "crates/gorsee-code-acp",
   "crates/gorsee-code-artifacts",
+  "crates/gorsee-code-coding-core",
   "crates/gorsee-code-cli",
   "crates/gorsee-code-config",
   "crates/gorsee-code-context",
   "crates/gorsee-code-core",
+  "crates/gorsee-code-diff",
   "crates/gorsee-code-gateway",
   "crates/gorsee-code-gateway-client",
   "crates/gorsee-code-hooks",
   "crates/gorsee-code-limits",
+  "crates/gorsee-code-mcp",
   "crates/gorsee-code-neurogate",
   "crates/gorsee-code-safety",
   "crates/gorsee-code-session",
@@ -23,7 +27,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.18"
+version = "0.1.19"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["Gorsee Code Contributors"]
@@ -32,20 +36,24 @@ rust-version = "1.80"
 
 [workspace.dependencies]
 anyhow = "1.0"
+agent-client-protocol = "0.15"
 async-stream = "0.3"
 axum = "0.7"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 crossterm = "0.28"
 futures-util = "0.3"
+git2 = { version = "0.21", default-features = false }
 ignore = "0.4"
 ratatui = "0.29"
 regex = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+rmcp = { version = "1.7", default-features = false, features = ["client", "transport-child-process"] }
 rpassword = "7.3"
 portable-pty = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+similar = "2.7"
 tempfile = "3.10"
 thiserror = "1.0"
 tokio = { version = "1.39", features = ["macros", "process", "rt-multi-thread", "signal", "time"] }

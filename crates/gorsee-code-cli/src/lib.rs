@@ -1,5 +1,6 @@
 pub mod auth;
 
+mod acp_commands;
 mod approval_commands;
 mod args;
 mod budget_commands;
@@ -7,7 +8,9 @@ mod checkpoint_commands;
 mod commands;
 mod commands_extra;
 mod config_file;
+mod diff_output;
 mod interactive;
+mod interactive_agents;
 mod limit_commands;
 mod live;
 mod model_commands;
@@ -18,6 +21,7 @@ mod protection_commands;
 mod route_commands;
 pub mod secret_prompt;
 mod session_commands;
+mod task_output;
 mod tui_commands;
 mod uninstall_commands;
 
@@ -32,12 +36,15 @@ pub use args::Cli;
 pub struct CliOptions {
     pub root: PathBuf,
     pub env_key: Option<String>,
+    pub global_auth_path: Option<PathBuf>,
 }
 
 impl CliOptions {
     pub fn for_root(root: impl AsRef<Path>) -> Self {
+        let root = root.as_ref().to_path_buf();
         Self {
-            root: root.as_ref().to_path_buf(),
+            global_auth_path: Some(root.join(".gorsee-code-test-auth").join("auth.json")),
+            root,
             env_key: None,
         }
     }
@@ -48,6 +55,7 @@ impl CliOptions {
             env_key: std::env::var("NEUROGATE_API_KEY")
                 .ok()
                 .or_else(|| std::env::var("GORSEE_NEUROGATE_API_KEY").ok()),
+            global_auth_path: paths::global_auth_path(),
         })
     }
 }

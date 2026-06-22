@@ -26,9 +26,11 @@ fn rendered_timeline_shows_chat_messages_without_internal_events() {
         .expect("render");
     let screen = buffer_text(terminal.backend().buffer());
 
-    assert!(screen.contains("#0001 Вы"));
+    assert!(!screen.contains("#0001"));
+    assert!(!screen.contains("#0003"));
+    assert!(screen.contains("Вы"));
     assert!(screen.contains("привет"));
-    assert!(screen.contains("#0003 Architect"));
+    assert!(screen.contains("Architect"));
     assert!(screen.contains("Здравствуйте"));
     for hidden in [
         "Процесс",

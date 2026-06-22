@@ -32,10 +32,11 @@ pub fn decide(
     approval_id: &str,
     decision: ApprovalDecision,
     env_key: Option<&str>,
+    global_auth_path: Option<&Path>,
 ) -> Result<String> {
     let (session_id, _) = find_approval(root, approval_id)?;
     ensure_saved_execution(root, &session_id, approval_id)?;
-    let client = require_live_client(root, env_key)?;
+    let client = require_live_client(root, env_key, global_auth_path)?;
     resume_decision(root, approval_id, decision, &session_id, &client)
 }
 
@@ -113,7 +114,7 @@ fn finished_output(
     summary: &TaskRunSummary,
 ) -> String {
     format!(
-        "{}: {}\nstatus: finished\nsession: {}\nevents: {}\nagents: {}\nartifacts: {}\n",
+        "{}: {}\nstatus: ready\nturn: finished\nsession: {}\nevents: {}\nagents: {}\nartifacts: {}\n",
         command_label(decision),
         approval_id,
         summary.session_id,
@@ -164,7 +165,7 @@ mod tests {
     use std::{cell::RefCell, fs};
 
     use gorsee_code_agent::{AgentRunError, ChatClient, TaskRunner};
-    use gorsee_code_core::TaskSpec;
+    use gorsee_code_core::{default_agent_matrix, AgentProfile, AgentRole, TaskSpec};
     use gorsee_code_neurogate::{ChatRequest, ChatResponse};
     use serde_json::json;
 
@@ -190,16 +191,14 @@ mod tests {
                 }]
             })
             .to_string(),
-            final_answer("architect continued"),
-            final_answer("scout done"),
-            final_answer("coder done"),
-            final_answer("validator done"),
-            final_answer("summarizer done"),
+            final_answer("coder continued"),
         ]);
         let runner = TaskRunner::new(paths::local_dir(temp.path()));
         let spec = TaskSpec::new("ship approved change", temp.path().display().to_string());
 
-        let error = runner.run_sequential(&spec, &client).unwrap_err();
+        let error = runner
+            .run_sequential_with_agents(&spec, &client, vec![agent_by_role(AgentRole::Coder)])
+            .unwrap_err();
         let AgentRunError::WaitingApproval(approval_id) = error else {
             panic!("expected waiting approval, got {error:?}");
         };
@@ -213,12 +212,20 @@ mod tests {
         .unwrap();
 
         assert!(output.contains(&format!("approve: {approval_id}")));
-        assert!(output.contains("status: finished"));
-        assert!(output.contains("artifacts: 7"));
+        assert!(output.contains("status: ready"));
+        assert!(output.contains("turn: finished"));
+        assert!(output.contains("artifacts: 10"));
         assert_eq!(
             fs::read_to_string(temp.path().join("src/lib.rs")).unwrap(),
             "pub fn ready() -> bool { true }\n"
         );
+    }
+
+    fn agent_by_role(role: AgentRole) -> AgentProfile {
+        default_agent_matrix()
+            .into_iter()
+            .find(|agent| agent.role == role)
+            .unwrap()
     }
 
     fn final_answer(answer: &str) -> String {

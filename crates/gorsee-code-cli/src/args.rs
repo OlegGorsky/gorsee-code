@@ -32,12 +32,14 @@ pub enum Command {
     Replay(SessionIdArgs),
     Export(SessionIdArgs),
     Gateway(GatewayArgs),
+    Acp(AcpArgs),
     MouseDebug,
     Tui,
     Skills(SkillsArgs),
     Agents,
     Usage,
     Tools,
+    Mcp,
     Files,
     Diff,
     Route(ObjectiveArgs),
@@ -132,6 +134,27 @@ pub struct SessionIdArgs {
 pub struct GatewayArgs {
     #[arg(long, default_value = "127.0.0.1:8765")]
     pub bind: String,
+}
+
+#[derive(Debug, Args)]
+pub struct AcpArgs {
+    #[command(subcommand)]
+    pub command: Option<AcpCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AcpCommand {
+    Plan(AcpTurnArgs),
+    Run(AcpTurnArgs),
+    Stdio,
+}
+
+#[derive(Debug, Args)]
+pub struct AcpTurnArgs {
+    #[arg(long)]
+    pub session: Option<String>,
+    #[arg(required = true, trailing_var_arg = true)]
+    pub objective: Vec<String>,
 }
 
 #[derive(Debug, Args)]

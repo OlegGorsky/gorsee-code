@@ -24,6 +24,7 @@ impl Default for BudgetPolicy {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BudgetStatus {
     pub used_tokens: u64,
+    pub cached_tokens: u64,
     pub limit_tokens: u64,
     pub percent_used: f64,
     pub warning: bool,
@@ -32,7 +33,8 @@ pub struct BudgetStatus {
 
 impl BudgetPolicy {
     pub fn evaluate(&self, ledger: &TokenLedger) -> BudgetStatus {
-        let used_tokens = ledger.totals().tokens;
+        let totals = ledger.totals();
+        let used_tokens = totals.tokens;
         let percent_used = if self.session_tokens == 0 {
             100.0
         } else {
@@ -40,6 +42,7 @@ impl BudgetPolicy {
         };
         BudgetStatus {
             used_tokens,
+            cached_tokens: totals.cached_tokens,
             limit_tokens: self.session_tokens,
             percent_used,
             warning: percent_used >= f64::from(self.warn_at_percent),
@@ -77,5 +80,6 @@ mod tests {
         .evaluate(&ledger);
         assert!(status.warning);
         assert!(!status.stopped);
+        assert_eq!(status.cached_tokens, 0);
     }
 }

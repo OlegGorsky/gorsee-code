@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use gorsee_code_mcp::McpRuntime;
 
 use crate::{
     args::{SessionIdArgs, SkillsCommand},
@@ -24,10 +25,10 @@ pub(crate) fn handler(
 fn run(root: &Path, env_key: Option<&str>, line: &str) -> Result<String> {
     let (command, args) = parse(line)?;
     match command.as_str() {
-        "capabilities" => capabilities(root, env_key),
+        "capabilities" => capabilities(root, env_key, None),
         "budget" | "checkpoint" | "limits" | "models" | "route" => run_cli(root, env_key, line),
         "diff" => diff(root),
-        "doctor" => commands::doctor(root, env_key),
+        "doctor" => commands::doctor(root, env_key, None),
         "export" => commands::export(root, session_args(first_arg(&args))),
         "files" => files(root),
         "hooks" => hooks(),
@@ -35,7 +36,7 @@ fn run(root: &Path, env_key: Option<&str>, line: &str) -> Result<String> {
         "mcp" => mcp(root),
         "replay" => commands::replay(root, session_args(first_arg(&args))),
         "sessions" => commands::sessions(root),
-        "skills" => commands::skills(root, skills_args(&args)?, env_key),
+        "skills" => commands::skills(root, skills_args(&args)?, env_key, None),
         "terminal" => terminal(root, &args),
         "tools" => tools(root),
         _ => Err(anyhow!("unknown command: /{command}")),
@@ -64,9 +65,13 @@ fn instructions(root: &Path) -> Result<String> {
     Ok(out)
 }
 
-fn mcp(root: &Path) -> Result<String> {
+pub(crate) fn mcp(root: &Path) -> Result<String> {
+    let runtime = McpRuntime::discover(root)?;
     let tools = tools(root)?;
-    Ok(format!("mcp:\nsource=tool-runtime\n{tools}"))
+    Ok(format!(
+        "{}\nlocal-{tools}",
+        runtime.render_status_with_tools()?
+    ))
 }
 
 fn terminal(root: &Path, args: &[String]) -> Result<String> {
@@ -116,6 +121,7 @@ fn run_cli(root: &Path, env_key: Option<&str>, line: &str) -> Result<String> {
         CliOptions {
             root: root.to_path_buf(),
             env_key: env_key.map(str::to_string),
+            global_auth_path: None,
         },
     )
 }
@@ -266,6 +272,7 @@ mod tests {
         assert!(instructions.contains("AGENTS.md"));
         assert!(instructions.contains("Use tests."));
         assert!(mcp.contains("mcp:"));
-        assert!(mcp.contains("tool-runtime"));
+        assert!(mcp.contains("source=rmcp"));
+        assert!(mcp.contains("local-tools:"));
     }
 }

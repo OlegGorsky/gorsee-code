@@ -10,7 +10,9 @@ rust-version.workspace = true
 [dependencies]
 chrono.workspace = true
 gorsee-code-artifacts = { path = "../gorsee-code-artifacts" }
+gorsee-code-coding-core = { path = "../gorsee-code-coding-core" }
 gorsee-code-core = { path = "../gorsee-code-core" }
+gorsee-code-diff = { path = "../gorsee-code-diff" }
 gorsee-code-hooks = { path = "../gorsee-code-hooks" }
 gorsee-code-neurogate = { path = "../gorsee-code-neurogate" }
 gorsee-code-safety = { path = "../gorsee-code-safety" }

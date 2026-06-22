@@ -8,7 +8,7 @@ use crate::{screen_parts::status_style, theme};
 
 pub(crate) fn agent_lines(agent: &AgentView) -> Vec<Line<'static>> {
     let percent = percent(agent.tokens_used as f64, agent.tokens_limit as f64);
-    vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled("  ● ", status_style(&agent.status)),
             Span::styled(title(&agent.role), theme::strong()),
@@ -28,11 +28,18 @@ pub(crate) fn agent_lines(agent: &AgentView) -> Vec<Line<'static>> {
             ),
         ]),
         bar_line("    ", percent, 12, status_style(&agent.status)),
-    ]
+    ];
+    if agent.cached_tokens > 0 {
+        lines.push(Line::from(vec![
+            Span::styled("    cache ", theme::dim()),
+            Span::styled(format!("{} токенов", agent.cached_tokens), theme::dim()),
+        ]));
+    }
+    lines
 }
 
 pub(crate) fn limit_lines(state: &WorkspaceState) -> Vec<Line<'static>> {
-    vec![
+    let mut lines = vec![
         Line::from(vec![Span::styled("ЛИМИТЫ", theme::accent())]),
         limit_numbers(
             "сессия",
@@ -44,7 +51,20 @@ pub(crate) fn limit_lines(state: &WorkspaceState) -> Vec<Line<'static>> {
             Span::styled("  live-окна ", theme::cyan()),
             Span::styled("/limits", theme::dim()),
         ]),
-    ]
+    ];
+    if state.budget.cached_tokens > 0 {
+        lines.insert(
+            3,
+            Line::from(vec![
+                Span::styled("  cache ", theme::dim()),
+                Span::styled(
+                    format!("{} токенов не списано", state.budget.cached_tokens),
+                    theme::dim(),
+                ),
+            ]),
+        );
+    }
+    lines
 }
 
 fn limit_numbers(label: &str, used: u64, limit: u64) -> Line<'static> {

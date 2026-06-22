@@ -59,9 +59,13 @@ impl Tool for ReadFileTool {
 
     fn run(&self, args: Value) -> Result<ToolOutput, ToolRuntimeError> {
         let path = arg_path(&args)?;
-        let path = self.paths.resolve_existing(path).map_err(handler)?;
-        let text = fs::read_to_string(path).map_err(handler)?;
-        Ok(ToolOutput::text(text))
+        let resolved = self.paths.resolve_existing(&path).map_err(handler)?;
+        let text = fs::read_to_string(resolved).map_err(handler)?;
+        Ok(ToolOutput {
+            text: text.clone(),
+            json: Some(json!({ "path": path, "bytes": text.len() })),
+            truncated: false,
+        })
     }
 }
 
@@ -132,10 +136,18 @@ fn manifest(name: &str, description: &str, capabilities: Vec<&str>) -> ToolManif
     }
 }
 
-fn arg_path(args: &Value) -> Result<&str, ToolRuntimeError> {
+fn arg_path(args: &Value) -> Result<String, ToolRuntimeError> {
     args.get("path")
+        .or_else(|| args.get("file"))
+        .or_else(|| args.get("file_path"))
+        .or_else(|| args.get("uri"))
         .and_then(Value::as_str)
+        .map(normalize_path_arg)
         .ok_or_else(|| handler("missing path"))
+}
+
+fn normalize_path_arg(path: &str) -> String {
+    path.strip_prefix("file://").unwrap_or(path).to_string()
 }
 
 fn handler(error: impl std::fmt::Display) -> ToolRuntimeError {
@@ -147,4 +159,36 @@ fn relative(root: &std::path::Path, path: &std::path::Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_file_accepts_file_alias() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("hello.txt"), "hello\n").unwrap();
+        let policy = PathPolicy::new(temp.path()).unwrap();
+
+        let output = ReadFileTool::new(policy)
+            .run(json!({ "file": "hello.txt" }))
+            .unwrap();
+
+        assert_eq!(output.text, "hello\n");
+    }
+
+    #[test]
+    fn read_file_accepts_file_uri_inside_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("hello.txt");
+        fs::write(&file, "hello\n").unwrap();
+        let policy = PathPolicy::new(temp.path()).unwrap();
+
+        let output = ReadFileTool::new(policy)
+            .run(json!({ "uri": format!("file://{}", file.display()) }))
+            .unwrap();
+
+        assert_eq!(output.text, "hello\n");
+    }
 }

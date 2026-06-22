@@ -5,9 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gorsee_code_safety::RiskClass;
+use gorsee_code_safety::{OutputBounds, RiskClass};
 use gorsee_code_tool_runtime::{Tool, ToolManifest, ToolOutput, ToolRuntimeError};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub struct RunCommandTool {
     root: PathBuf,
@@ -39,7 +39,7 @@ impl Tool for RunCommandTool {
             .ok_or_else(|| handler("missing command"))?;
         ensure_allowed(&command)?;
         let output = run_with_timeout(&self.root, &command)?;
-        Ok(ToolOutput::text(format_output(output)))
+        Ok(format_output(&command, output))
     }
 }
 
@@ -112,11 +112,28 @@ fn run_with_timeout(root: &Path, command: &[String]) -> Result<Output, ToolRunti
     }
 }
 
-fn format_output(output: Output) -> String {
+fn format_output(command: &[String], output: Output) -> ToolOutput {
     let mut text = String::from_utf8_lossy(&output.stdout).to_string();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     text.push_str(&format!("\nexit_status={}", output.status));
-    text
+    let bounded = OutputBounds::default().apply(&text);
+    let exit_status = output.status.code();
+    let status = if output.status.success() {
+        "passed"
+    } else {
+        "failed"
+    };
+    ToolOutput {
+        text: bounded.text.clone(),
+        json: Some(json!({
+            "status": status,
+            "command": command,
+            "exit_status": exit_status,
+            "truncated": bounded.truncated,
+            "output": bounded.text,
+        })),
+        truncated: bounded.truncated,
+    }
 }
 
 fn handler(error: impl std::fmt::Display) -> ToolRuntimeError {
@@ -125,6 +142,11 @@ fn handler(error: impl std::fmt::Display) -> ToolRuntimeError {
 
 #[cfg(test)]
 mod tests {
+    use std::process::Output;
+
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+
     use super::*;
 
     #[test]
@@ -162,6 +184,24 @@ mod tests {
         ] {
             assert!(ensure_allowed(&command).is_ok(), "{command:?}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn format_output_marks_failed_command_structurally() {
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: b"nope".to_vec(),
+            stderr: Vec::new(),
+        };
+        let command = vec!["cargo".into(), "check".into()];
+
+        let formatted = format_output(&command, output);
+
+        assert_eq!(formatted.json.as_ref().unwrap()["status"], "failed");
+        assert_eq!(formatted.json.as_ref().unwrap()["exit_status"], 1);
+        assert_eq!(formatted.json.as_ref().unwrap()["command"][0], "cargo");
+        assert!(!formatted.truncated);
     }
 
     fn cmd(parts: &[&str]) -> Vec<String> {

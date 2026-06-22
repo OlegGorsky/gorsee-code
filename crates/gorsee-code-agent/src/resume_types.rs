@@ -1,3 +1,4 @@
+use gorsee_code_coding_core::{ExecutionContract, TurnPlan};
 use gorsee_code_core::{AgentProfile, TaskSpec};
 use gorsee_code_session::SessionStore;
 use gorsee_code_tool_runtime::ToolRegistry;
@@ -26,6 +27,8 @@ pub(crate) struct AgentResumeInput<'a, 'sink, C: ChatClient> {
     pub(crate) spec: &'a TaskSpec,
     pub(crate) skill_id: Option<&'a str>,
     pub(crate) agent: &'a AgentProfile,
+    pub(crate) turn_plan: Option<&'a TurnPlan>,
+    pub(crate) execution_contract: &'a ExecutionContract,
 }
 
 pub(crate) struct RemainingAgentsInput<'a, 'sink, C: ChatClient> {
@@ -38,6 +41,8 @@ pub(crate) struct RemainingAgentsInput<'a, 'sink, C: ChatClient> {
     pub(crate) sink: &'a mut EventSink<'sink>,
     pub(crate) agents: &'a [AgentProfile],
     pub(crate) first_index: usize,
+    pub(crate) turn_plan: Option<&'a TurnPlan>,
+    pub(crate) execution_contract: &'a ExecutionContract,
 }
 
 pub(crate) struct PendingSaveInput<'a> {
@@ -54,5 +59,5 @@ pub(crate) struct PendingSaveInput<'a> {
 
 pub(crate) enum ResumeState {
     Finished,
-    Waiting(PendingApproval),
+    Waiting(Box<PendingApproval>),
 }

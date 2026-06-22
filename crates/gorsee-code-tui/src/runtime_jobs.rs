@@ -34,7 +34,8 @@ pub(crate) fn process_intent(
         AppIntent::Copy(_) => false,
         AppIntent::Submit(text) => start_job(worker, app, "running", true, {
             let run = handlers.submit.clone();
-            move || run(&root, text)
+            let session_id = app.active_session_id().map(ToOwned::to_owned);
+            move || run(&root, session_id.as_deref(), text)
         }),
         AppIntent::Approve(id) => start_job(worker, app, "approving", false, {
             let run = handlers.approve.clone();
@@ -182,7 +183,8 @@ fn display_error(error: &anyhow::Error) -> String {
 
 fn completed_session_id(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
-        line.strip_prefix("run: completed session=")
+        line.strip_prefix("run: session=")
+            .or_else(|| line.strip_prefix("run: completed session="))
             .map(str::trim)
             .filter(|id| !id.is_empty())
             .map(ToOwned::to_owned)
